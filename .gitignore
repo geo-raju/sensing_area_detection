@@ -13,9 +13,6 @@ sensing-env/
 # Environment variables
 .env
 
-# Jupyter Notebook checkpoints
-*.ipynb_checkpoints/
-
 # VSCode
 .vscode/
 
@@ -23,20 +20,8 @@ sensing-env/
 .DS_Store
 Thumbs.db
 
-# API keys / credentials
-config/
-
 # Data files
 data/
-
-# Best model
-checkpoints/
-
-# Reports and generated images
-reports/*.pdf
-reports/*.xlsx
-reports/charts/*.png
-reports/charts/*.jpg
 
 # Logs or temp
 *.log
