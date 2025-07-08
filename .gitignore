@@ -1,0 +1,43 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*.so
+*.pyc   
+*.pth
+
+# Virtual environment   
+venv/
+.venv/
+sensing-env/
+
+# Environment variables
+.env
+
+# Jupyter Notebook checkpoints
+*.ipynb_checkpoints/
+
+# VSCode
+.vscode/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# API keys / credentials
+config/
+
+# Data files
+data/
+
+# Best model
+checkpoints/
+
+# Reports and generated images
+reports/*.pdf
+reports/*.xlsx
+reports/charts/*.png
+reports/charts/*.jpg
+
+# Logs or temp
+*.log
+*.tmp
