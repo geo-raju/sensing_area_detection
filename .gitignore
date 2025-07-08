@@ -21,7 +21,7 @@ sensing-env/
 Thumbs.db
 
 # Data files
-data/
+dataset/
 
 # Logs or temp
 *.log

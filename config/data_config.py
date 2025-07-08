@@ -3,8 +3,8 @@ from pathlib import Path
 
 # Directory paths
 BASE_DIR = Path(__file__).parent.parent
-RAW_DIR = BASE_DIR / 'data' / 'raw'
-PROCESSED_DIR = BASE_DIR / 'data' / 'processed'
+RAW_DIR = BASE_DIR / 'dataset' / 'raw'
+PROCESSED_DIR = BASE_DIR / 'dataset' / 'processed'
 
 # Data split configuration
 TRAIN_SPLIT = 0.7
