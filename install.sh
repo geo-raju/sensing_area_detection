@@ -1,15 +1,17 @@
 #!/bin/bash
-# Simple installation script
 
 echo "Installing sensing area detection package..."
 
-# Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
-    python3 -m venv venv
+# Create virtual environment with Python 3.11 if it doesn't exist
+if [ ! -d "sensing-env" ]; then
+    python3.11 -m venv sensing-env
 fi
 
 # Activate virtual environment
-source venv/bin/activate
+source sensing-env/bin/activate
+
+# Upgrade pip to avoid legacy issues
+pip install --upgrade pip
 
 # Install requirements
 pip install -r requirements.txt
@@ -18,4 +20,4 @@ pip install -r requirements.txt
 pip install -e .
 
 echo "Installation completed!"
-echo "To activate the environment, run: source venv/bin/activate"
+echo "To activate the environment, run: source sensing-env/bin/activate"

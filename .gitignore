@@ -5,6 +5,9 @@ __pycache__/
 *.pyc   
 *.pth
 
+# Python packaging
+*.egg-info/
+
 # Virtual environment   
 venv/
 .venv/
