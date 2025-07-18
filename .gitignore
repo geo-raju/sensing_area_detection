@@ -11,7 +11,7 @@ __pycache__/
 # Virtual environment   
 venv/
 .venv/
-sensing-env/
+/sensing-env/
 
 # Environment variables
 .env
@@ -24,8 +24,11 @@ sensing-env/
 Thumbs.db
 
 # Data files
-dataset/
+/data/
 
 # Logs or temp
 *.log
 *.tmp
+
+#Include src/data in commit
+!/src/data/
