@@ -8,8 +8,8 @@ from typing import Dict, Final
 
 # Directory paths
 BASE_DIR: Final[Path] = Path(__file__).parent.parent
-RAW_DIR_PATH: Final[Path] = BASE_DIR / 'dataset' / 'raw'
-PROC_DIR_PATH: Final[Path] = BASE_DIR / 'dataset' / 'processed'
+RAW_DIR_PATH: Final[Path] = BASE_DIR / 'data' / 'raw'
+PROC_DIR_PATH: Final[Path] = BASE_DIR / 'data' / 'processed'
 
 # Directory structure constants
 IMG_RAW_DIR: Final[str] = 'laser_off'
@@ -19,6 +19,10 @@ PROBE_PROC_DIR: Final[str] = 'probe_axis'
 LABEL_RAW_DIR: Final[str] = 'laserptGT'
 LABEL_PROC_DIR: Final[str] = 'labels'
 LABEL_FILE: Final[str] = 'CenterPt.txt'
+LEFT_CAM_RAW_DIR: Final[str] = 'camera0'
+LEFT_CAM_PROC_DIR: Final[str] = 'left'
+RIGHT_CAM_RAW_DIR: Final[str] = 'camera1'
+RIGHT_CAM_PROC_DIR: Final[str] = 'right'
 
 # Data split configuration
 TRAIN_RATIO: Final[float] = 0.7
@@ -28,11 +32,11 @@ RANDOM_STATE: Final[int] = 42
 
 # Camera and data type mappings
 CAMERA_CONFIG: Final[Dict[str, str]] = {
-    'camera0': 'left',
-    'camera1': 'right'
+    LEFT_CAM_RAW_DIR: LEFT_CAM_PROC_DIR,
+    RIGHT_CAM_RAW_DIR: RIGHT_CAM_PROC_DIR
 }
 
 DATA_TYPE_CONFIG: Final[Dict[str, str]] = {
-    'laser_off': 'images',
-    'line_annotation_sample': 'probe_axis'
+    IMG_RAW_DIR: IMG_PROC_DIR,
+    PROBE_RAW_DIR: PROBE_PROC_DIR
 }
