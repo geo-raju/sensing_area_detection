@@ -18,6 +18,7 @@ sys.path.insert(0, str(project_root))
 from src.data.organiser import DataOrganiser, DataSplitConfig, DirectoryConfig
 from config.data_config import (
     RAW_DIR_PATH, PROC_DIR_PATH,
+    LEFT_CAM_RAW_DIR,
     IMG_RAW_DIR, IMG_PROC_DIR, 
     LABEL_RAW_DIR, LABEL_PROC_DIR, LABEL_FILE,
     PROBE_RAW_DIR, PROBE_PROC_DIR,
@@ -40,7 +41,7 @@ class ScriptConfig:
     random_state: int
     dry_run: bool
     log_level: str
-    camera: str = 'camera0'
+    camera: str = LEFT_CAM_RAW_DIR
     
     def __post_init__(self):
         """Validate configuration after initialisation."""
