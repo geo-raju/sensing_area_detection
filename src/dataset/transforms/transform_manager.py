@@ -131,6 +131,9 @@ class TransformManager:
 
         # Try to get configuration if available
         if hasattr(self.transform, 'transforms'):
-            transform_info["transforms"] = [str(type(t).__name__) for t in self.transform.transforms]
+            try:
+                transform_info["transforms"] = [str(type(t).__name__) for t in self.transform.transforms]
+            except (TypeError, AttributeError):
+                transform_info["transforms"] = "unknown"
 
         return transform_info
