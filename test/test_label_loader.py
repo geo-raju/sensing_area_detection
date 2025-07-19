@@ -1,7 +1,6 @@
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
-from typing import Dict, Tuple
 
 from src.dataset.loaders.label_loader import LabelLoader
 from src.dataset.core.data_structures import DatasetError
