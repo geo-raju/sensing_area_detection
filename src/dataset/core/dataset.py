@@ -20,6 +20,7 @@ from src.dataset.loaders.image_loader import ImageLoader
 from src.dataset.loaders.label_loader import LabelLoader
 from src.dataset.loaders.axis_loader import AxisLoader
 from src.dataset.transforms.transform_manager import TransformManager
+from src.dataset.utils import DatasetValidator
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,9 @@ class SensingAreaDataset(Dataset):
         except DatasetError as e:
             logger.error(f"Failed to get image filenames for {subset} subset: {e}")
             self.filenames = [] # Initialize as empty to prevent further errors
+
+        # Initialize validator
+        self.validator = DatasetValidator(self.file_manager, self.label_loader, self.filenames)
 
         # Pre-load labels if not lazy loading
         if not lazy_load and self.filenames: # Only try to load if there are filenames
@@ -158,26 +162,6 @@ class SensingAreaDataset(Dataset):
             filename=filename
         )
 
-    def get_sample_info(self, idx: int) -> Dict[str, Any]:
-        """Get sample information without loading data."""
-        if not 0 <= idx < len(self):
-            raise IndexError(f"Index {idx} out of range")
-
-        filename = self.filenames[idx]
-        filename_no_ext = os.path.splitext(filename)[0]
-        cameras = list(CAMERA_CONFIG.values())
-
-        return {
-            "filename": filename,
-            "filename_no_ext": filename_no_ext,
-            "subset": self.subset,
-            "left_img_path": str(self.file_manager.get_directory(cameras[0], IMG_PROC_DIR) / filename),
-            "right_img_path": str(self.file_manager.get_directory(cameras[1], IMG_PROC_DIR) / filename),
-            "left_axis_path": str(self.file_manager.get_directory(cameras[0], PROBE_PROC_DIR) / f"{filename_no_ext}.txt"),
-            "right_axis_path": str(self.file_manager.get_directory(cameras[1], PROBE_PROC_DIR) / f"{filename_no_ext}.txt"),
-            "transform_info": self.transform_manager.get_transform_info()
-        }
-
     def get_subset_stats(self) -> Dict[str, Any]:
         """Get subset statistics."""
         center_points = self.label_loader.center_points
@@ -193,45 +177,6 @@ class SensingAreaDataset(Dataset):
             "transform_info": self.transform_manager.get_transform_info()
         }
 
-    def validate_sample_integrity(self, idx: int) -> Dict[str, bool]:
-        """Validate sample file integrity."""
-        if not 0 <= idx < len(self):
-            raise IndexError(f"Index {idx} out of range")
-
-        filename = self.filenames[idx]
-        filename_no_ext = os.path.splitext(filename)[0]
-        cameras = list(CAMERA_CONFIG.values())
-        center_points = self.label_loader.center_points
-
-        return {
-            'left_image': (self.file_manager.get_directory(cameras[0], IMG_PROC_DIR) / filename).exists(),
-            'right_image': (self.file_manager.get_directory(cameras[1], IMG_PROC_DIR) / filename).exists(),
-            'left_label': filename in center_points.get(cameras[0], {}),
-            'right_label': filename in center_points.get(cameras[1], {}),
-            'left_axis': (self.file_manager.get_directory(cameras[0], PROBE_PROC_DIR) / f"{filename_no_ext}.txt").exists(),
-            'right_axis': (self.file_manager.get_directory(cameras[1], PROBE_PROC_DIR) / f"{filename_no_ext}.txt").exists(),
-        }
-
-    def validate_all_samples(self) -> Dict[str, List[int]]:
-        """Validate all samples and return problematic indices."""
-        issues = {
-            'missing_left_image': [],
-            'missing_right_image': [],
-            'missing_left_label': [],
-            'missing_right_label': [],
-            'missing_left_axis': [],
-            'missing_right_axis': []
-        }
-
-        for idx in range(len(self)):
-            validation = self.validate_sample_integrity(idx)
-
-            for key, is_valid in validation.items():
-                if not is_valid:
-                    issues[f'missing_{key}'].append(idx)
-
-        return issues
-
     def get_camera_names(self) -> List[str]:
         """Get camera names from configuration."""
         return list(CAMERA_CONFIG.values())
@@ -245,3 +190,26 @@ class SensingAreaDataset(Dataset):
         self.transform_manager = TransformManager(new_transform)
         transform_info = self.transform_manager.get_transform_info()
         logger.info(f"Updated transform: {transform_info}")
+
+    # Validation methods - delegate to validator
+    def get_sample_info(self, idx: int) -> Dict[str, Any]:
+        """Get sample information without loading data."""
+        sample_info = self.validator.get_sample_info(idx)
+        # Add subset and transform info that are specific to this dataset instance
+        sample_info.update({
+            "subset": self.subset,
+            "transform_info": self.transform_manager.get_transform_info()
+        })
+        return sample_info
+
+    def validate_sample_integrity(self, idx: int) -> Dict[str, bool]:
+        """Validate sample file integrity."""
+        return self.validator.validate_sample_integrity(idx)
+
+    def validate_all_samples(self) -> Dict[str, List[int]]:
+        """Validate all samples and return problematic indices."""
+        return self.validator.validate_all_samples()
+
+    def get_validation_summary(self) -> Dict[str, Any]:
+        """Get a summary of validation results."""
+        return self.validator.get_validation_summary()
