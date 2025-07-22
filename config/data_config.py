@@ -9,6 +9,7 @@ from typing import Dict, Final
 # Directory paths
 BASE_DIR: Final[Path] = Path(__file__).parent.parent
 RAW_DIR_PATH: Final[Path] = BASE_DIR / 'data' / 'raw'
+CLEAN_DIR_PATH: Final[Path] = BASE_DIR / 'data' / 'clean'
 PROC_DIR_PATH: Final[Path] = BASE_DIR / 'data' / 'processed'
 
 # Directory structure constants
@@ -19,6 +20,8 @@ PROBE_PROC_DIR: Final[str] = 'probe_axis'
 LABEL_RAW_DIR: Final[str] = 'laserptGT'
 LABEL_PROC_DIR: Final[str] = 'labels'
 LABEL_FILE: Final[str] = 'CenterPt.txt'
+DEPTH_RAW_DIR: Final[str] = 'depthGT'
+DEPTH_PROC_DIR: Final[str] = 'depth_labels'
 LEFT_CAM_RAW_DIR: Final[str] = 'camera0'
 LEFT_CAM_PROC_DIR: Final[str] = 'left'
 RIGHT_CAM_RAW_DIR: Final[str] = 'camera1'
@@ -38,5 +41,6 @@ CAMERA_CONFIG: Final[Dict[str, str]] = {
 
 DATA_TYPE_CONFIG: Final[Dict[str, str]] = {
     IMG_RAW_DIR: IMG_PROC_DIR,
-    PROBE_RAW_DIR: PROBE_PROC_DIR
+    PROBE_RAW_DIR: PROBE_PROC_DIR,
+    DEPTH_RAW_DIR: DEPTH_PROC_DIR
 }
