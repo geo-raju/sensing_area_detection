@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Set, Tuple, List, Optional
+from typing import Set, List, Optional, Dict
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,11 @@ class FileSystemOperations:
             logger.debug(f"Created directory: {directory}")
 
     @staticmethod
+    def check_file_exists(file_path: Path) -> bool:
+        """Check if a file exists."""
+        return file_path.exists()
+
+    @staticmethod
     def write_lines_to_file(file_path: Path, lines: List[str]) -> None:
         """Write lines to a file, creating parent directories if needed."""
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,6 +53,10 @@ class FileParser:
     @staticmethod
     def parse_file(file_path: Path, separator: str = " ") -> List[ParsedLine]:
         """Parse a text file and return structured data."""
+        if not FileSystemOperations.check_file_exists(file_path):
+            logger.error(f"File not found: {file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
         parsed_lines = []
         
         try:
@@ -70,94 +79,6 @@ class FileParser:
     def contains_nan_values(parts: List[str]) -> bool:
         """Check if any part contains NaN values."""
         return any(str(part).lower() == 'nan' for part in parts)
-
-
-class LabelFileProcessor:
-    """Specialized processor for label files."""
-    
-    @staticmethod
-    def parse_label_entry(line: str, parts: List[str]) -> LabelEntry:
-        """Parse a single line from label file into a LabelEntry."""
-        if len(parts) != 3:
-            raise ValueError(f"Invalid line format - expected 3 parts, got {len(parts)}: {line}")
-        
-        filename = parts[0]
-        
-        try:
-            x_coord = float(parts[1])
-            y_coord = float(parts[2])
-        except ValueError as e:
-            raise ValueError(f"Invalid coordinates in line: {line}") from e
-        
-        return LabelEntry(filename, x_coord, y_coord)
-    
-    @staticmethod
-    def _should_include_entry(entry: LabelEntry, valid_items: Optional[Set[str]], 
-                            is_filename_filter: bool) -> bool:
-        """Determine if an entry should be included based on filter criteria."""
-        if not valid_items:
-            return True
-            
-        if is_filename_filter:
-            return entry.filename in valid_items
-        else:
-            # Filter by index (filename without extension)
-            index = entry.filename.split('.')[0]
-            return index in valid_items
-    
-    @staticmethod
-    def filter_label_file(source_file: Path, dest_file: Path, 
-                         valid_items: Optional[Set[str]] = None, 
-                         is_filename_filter: bool = True) -> Tuple[Set[str], int]:
-        """
-        Filter label file and return valid filenames and count.
-        
-        Args:
-            source_file: Source label file path
-            dest_file: Destination label file path
-            valid_items: Set of valid filenames or indices to keep
-            is_filename_filter: If True, filter by filename; if False, filter by index
-            
-        Returns:
-            Tuple of (valid_filenames_set, valid_entries_count)
-        """
-        if not source_file.exists():
-            logger.error(f"Source label file not found: {source_file}")
-            return set(), 0
-        
-        valid_filenames = set()
-        valid_lines = []
-
-        try:
-            parsed_lines = FileParser.parse_file(source_file, ',')
-        except (IOError, OSError):
-            return set(), 0
-
-        for parsed_line in parsed_lines:
-            try:
-                # Check for NaN values first
-                if FileParser.contains_nan_values(parsed_line.parts):
-                    raise ValueError(f"NaN values found in line: {parsed_line.original_text}")
-                
-                # Parse the label entry
-                entry = LabelFileProcessor.parse_label_entry(
-                    parsed_line.original_text, parsed_line.parts
-                )
-                
-                # Check if this entry should be included
-                if LabelFileProcessor._should_include_entry(entry, valid_items, is_filename_filter):
-                    valid_filenames.add(entry.filename)
-                    valid_lines.append(parsed_line.original_text)
-                    
-            except ValueError as e:
-                logger.warning(f"Skipping line {parsed_line.line_number}: {e}")
-                continue
-        
-        # Write filtered file
-        FileSystemOperations.write_lines_to_file(dest_file, valid_lines)
-        
-        logger.info(f"Processed labels: {len(valid_lines)} valid entries from {source_file}")
-        return valid_filenames, len(valid_lines)
 
 
 class FileValidator:
@@ -184,8 +105,8 @@ class FileValidator:
                     
             return True
             
-        except (IOError, OSError) as e:
-            logger.error(f"Error reading file {file_path}: {e}")
+        except (IOError, OSError, FileNotFoundError) as e:
+            logger.error(f"Error validating file {file_path}: {e}")
             return False
 
 
@@ -206,18 +127,123 @@ class FilenameUtils:
         return {filename.split('.')[0] for filename in filenames}
 
 
+class LabelFileProcessor:
+    """Specialized processor for label files."""
+    
+    @staticmethod
+    def parse_label_entry(line: str, parts: List[str]) -> LabelEntry:
+        """Parse a single line from label file into a LabelEntry."""
+        if len(parts) != 3:
+            raise ValueError(f"Invalid line format - expected 3 parts, got {len(parts)}: {line}")
+        
+        filename = parts[0]
+        
+        try:
+            x_coord = float(parts[1])
+            y_coord = float(parts[2])
+        except ValueError as e:
+            raise ValueError(f"Invalid coordinates in line: {line}") from e
+        
+        return LabelEntry(filename, x_coord, y_coord)
+    
+    @staticmethod
+    def get_valid_label_files(source_file: Path) -> Dict[str, str]:
+        """
+        Parse and validate label file entries.
+        
+        Args:
+            source_file: Path to the label file
+            
+        Returns:
+            Dictionary mapping filename to original line text
+        """
+        if not FileSystemOperations.check_file_exists(source_file):
+            logger.error(f"Source label file not found: {source_file}")
+            return {}
+
+        valid_label_dict = {}
+
+        try:
+            parsed_lines = FileParser.parse_file(source_file, ',')
+        except (IOError, OSError, FileNotFoundError):
+            return {}
+
+        for parsed_line in parsed_lines:
+            try:
+                # Check for NaN values
+                if FileParser.contains_nan_values(parsed_line.parts):
+                    raise ValueError(f"NaN values found in line: {parsed_line.original_text}")
+
+                # Parse the label entry
+                entry = LabelFileProcessor.parse_label_entry(
+                    parsed_line.original_text, parsed_line.parts
+                )
+
+                valid_label_dict[entry.filename] = parsed_line.original_text
+            
+            except ValueError as e:
+                logger.warning(f"Skipping line {parsed_line.line_number}: {e}")
+                continue
+        
+        logger.info(f"Loaded {len(valid_label_dict)} valid label entries from {source_file}")
+        return valid_label_dict
+
+
 class FileProcessor:
     """
-    Main file processor class that combines all file processing operations.
-    This maintains backward compatibility with the original interface.
+    Main file processor class that provides a unified interface for file operations.
+    
+    This class serves as a facade that delegates to specialized classes for different
+    types of file operations, maintaining backward compatibility while providing
+    better organization and maintainability.
     """
     
-    # Delegate to specialized classes for better organization
-    create_directories = FileSystemOperations.create_directories
-    write_file = FileSystemOperations.write_lines_to_file
-    parse_file = FileParser.parse_file
-    check_for_nan = FileParser.contains_nan_values
-    parse_label_line = LabelFileProcessor.parse_label_entry
-    filter_label_file = LabelFileProcessor.filter_label_file
-    check_file_for_nan = FileValidator.check_file_for_nan
-    get_file_indices = FilenameUtils.extract_indices
+    # File system operations
+    @staticmethod
+    def create_directories(base_path: Path, subdirs: List[str]) -> None:
+        """Create multiple subdirectories under a base path."""
+        return FileSystemOperations.create_directories(base_path, subdirs)
+    
+    @staticmethod
+    def check_file_exists(file_path: Path) -> bool:
+        """Check if a file exists."""
+        return FileSystemOperations.check_file_exists(file_path)
+    
+    @staticmethod
+    def write_file(file_path: Path, lines: List[str]) -> None:
+        """Write lines to a file, creating parent directories if needed."""
+        return FileSystemOperations.write_lines_to_file(file_path, lines)
+    
+    # File parsing operations
+    @staticmethod
+    def parse_file(file_path: Path, separator: str = " ") -> List[ParsedLine]:
+        """Parse a text file and return structured data."""
+        return FileParser.parse_file(file_path, separator)
+    
+    @staticmethod
+    def check_for_nan(parts: List[str]) -> bool:
+        """Check if any part contains NaN values."""
+        return FileParser.contains_nan_values(parts)
+    
+    # File validation operations
+    @staticmethod
+    def check_file_for_nan(file_path: Path, separator: str = " ") -> bool:
+        """Check if a text file contains NaN values."""
+        return FileValidator.check_file_for_nan(file_path, separator)
+    
+    # Label file operations
+    @staticmethod
+    def parse_label_line(line: str, parts: List[str]) -> LabelEntry:
+        """Parse a single line from label file into a LabelEntry."""
+        return LabelFileProcessor.parse_label_entry(line, parts)
+    
+    @staticmethod
+    def get_valid_label_files(source_file: Path) -> Dict[str, str]:
+        """Parse and validate label file entries."""
+        return LabelFileProcessor.get_valid_label_files(source_file)
+    
+    # Filename utilities
+    @staticmethod
+    def get_file_indices(filenames: Set[str]) -> Set[str]:
+        """Extract indices from filenames."""
+        return FilenameUtils.extract_indices(filenames)
