@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Set, List, Optional, Dict
+from typing import Set, List, Dict
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -187,6 +187,54 @@ class LabelFileProcessor:
         
         logger.info(f"Loaded {len(valid_label_dict)} valid label entries from {source_file}")
         return valid_label_dict
+    
+    @staticmethod
+    def process_label_files(indices: Set[str], cameras: Dict[str, str], 
+                          source_dir: Path, dest_dir: Path, 
+                          label_dir: str, label_file: str,
+                          files_dict: Dict[str, Dict[str, str]] = None,
+                          action_name: str = "Processed") -> None:
+        """
+        Process label files by filtering entries for given indices and writing to destination.
+        
+        Args:
+            indices: Set of file indices to include
+            cameras: Dictionary mapping camera names
+            source_dir: Directory to read label files from (if files_dict not provided)
+            dest_dir: Directory to write label files to
+            label_dir: Sub directory of label file
+            label_file: File containing labels
+            files_dict: Pre-loaded files dictionary (optional, will load from source if None)
+            action_name: Description of action for logging (e.g., "Copied", "Updated")
+        """
+        for _, camera_proc in cameras.items():
+            source_label_path = source_dir / camera_proc / label_dir / label_file
+            dest_label_path = dest_dir / camera_proc / label_dir / label_file
+            
+            try:
+                # Use provided files_dict or load from source
+                if files_dict and camera_proc in files_dict:
+                    current_files_dict = files_dict[camera_proc]
+                else:
+                    if not source_label_path.exists():
+                        logger.warning(f"Source label file not found: {source_label_path}")
+                        continue
+                    current_files_dict = FileProcessor.get_valid_label_files(source_label_path)
+                
+                # Filter for specified indices
+                valid_lines = []
+                for index in indices:
+                    filename_key = f"{index}.jpg"
+                    if filename_key in current_files_dict:
+                        valid_lines.append(current_files_dict[filename_key])
+                
+                # Write filtered labels
+                FileProcessor.write_file(dest_label_path, sorted(valid_lines))
+                logger.info(f"{action_name} {len(valid_lines)} label entries for {camera_proc}")
+                
+            except Exception as e:
+                logger.error(f"Failed to process label file for {camera_proc}: {e}")
+                raise
 
 
 class FileProcessor:
@@ -247,3 +295,11 @@ class FileProcessor:
     def get_file_indices(filenames: Set[str]) -> Set[str]:
         """Extract indices from filenames."""
         return FilenameUtils.extract_indices(filenames)
+    
+    @staticmethod
+    def process_label_files(indices: Set[str], cameras: Dict[str, str] , 
+                            source_dir: Path, dest_dir: Path, 
+                            label_dir: str, label_file: str,
+                            files_dict: Dict[str, Dict[str, str]], action_name: str) -> None:
+        """Create multiple subdirectories under a base path."""
+        return LabelFileProcessor.process_label_files(indices, cameras, source_dir, dest_dir, label_dir, label_file, files_dict, action_name)
