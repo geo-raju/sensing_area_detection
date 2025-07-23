@@ -16,7 +16,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from config.data_config import (
-    RAW_DIR_PATH, CLEAN_DIR_PATH
+    RAW_DIR_PATH, CLEAN_DIR_PATH, LEFT_CAM_RAW_DIR, RIGHT_CAM_RAW_DIR
 )
 from config.logging_config import setup_logging
 from src.data.cleaner import DataCleaner
@@ -168,7 +168,7 @@ def perform_pre_validation(raw_dir: Path) -> bool:
     validation_errors = []
     
     # Check if required directories exist
-    required_dirs = ['left_cam', 'right_cam']  # Update based on your config
+    required_dirs = [LEFT_CAM_RAW_DIR, RIGHT_CAM_RAW_DIR]
     for dir_name in required_dirs:
         dir_path = raw_dir / dir_name
         if not dir_path.exists():
