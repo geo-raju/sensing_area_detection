@@ -1,14 +1,13 @@
 import shutil
 import logging
 from pathlib import Path
-from typing import Set, Tuple, Dict
+from typing import Set, Dict
 from dataclasses import dataclass
 from enum import Enum
 
 from config.data_config import (
     CAMERA_CONFIG, DATA_TYPE_CONFIG,
-    LEFT_CAM_RAW_DIR, LEFT_CAM_PROC_DIR,
-    RIGHT_CAM_RAW_DIR, RIGHT_CAM_PROC_DIR,
+    LEFT_CAM_PROC_DIR, RIGHT_CAM_PROC_DIR,
     IMG_RAW_DIR, IMG_PROC_DIR,
     PROBE_RAW_DIR, PROBE_PROC_DIR,
     LABEL_RAW_DIR, LABEL_PROC_DIR,
@@ -22,15 +21,14 @@ logger = logging.getLogger(__name__)
 
 class FileType(Enum):
     """Enumeration of different file types to process."""
-    IMAGE = ('.jpg', IMG_RAW_DIR, IMG_PROC_DIR, False)
-    PROBE = ('.txt', PROBE_RAW_DIR, PROBE_PROC_DIR, True)
-    DEPTH = ('.npy', DEPTH_RAW_DIR, DEPTH_PROC_DIR, False)
+    IMAGE = ('.jpg', IMG_RAW_DIR, IMG_PROC_DIR)
+    PROBE = ('.txt', PROBE_RAW_DIR, PROBE_PROC_DIR)
+    DEPTH = ('.npy', DEPTH_RAW_DIR, DEPTH_PROC_DIR)
     
-    def __init__(self, extension: str, raw_dir: str, proc_dir: str, check_nan: bool):
+    def __init__(self, extension: str, raw_dir: str, proc_dir: str):
         self.extension = extension
         self.raw_dir = raw_dir
         self.proc_dir = proc_dir
-        self.check_nan = check_nan
 
 
 @dataclass
@@ -40,23 +38,30 @@ class ProcessingStats:
     skipped: int = 0
     removed: int = 0
     
-    def add_copied(self, count: int) -> None:
+    def add_copied(self, count: int = 1) -> None:
+        """Add to copied count."""
         self.copied += count
         
-    def add_skipped(self, count: int) -> None:
+    def add_skipped(self, count: int = 1) -> None:
+        """Add to skipped count."""
         self.skipped += count
         
-    def add_removed(self, count: int) -> None:
+    def add_removed(self, count: int = 1) -> None:
+        """Add to removed count."""
         self.removed += count
+    
+    def total_processed(self) -> int:
+        """Return total number of files processed."""
+        return self.copied + self.skipped + self.removed
 
 
 @dataclass
-class CleaningResult:
-    """Container for cleaning operation results."""
-    valid_files: Set[str]
+class CopyResult:
+    """Result of file copying operation."""
     stats: ProcessingStats
-    
-    
+    valid_files: Set[str]
+
+
 class DirectoryManager:
     """Handles directory operations for data cleaning."""
     
@@ -67,11 +72,15 @@ class DirectoryManager:
     
     def create_directory_structure(self) -> None:
         """Create the cleaned data directory structure."""
-        for camera_proc in self.cameras.values():
-            subdirs = list(self.data_types.values()) + [LABEL_PROC_DIR]
-            FileProcessor.create_directories(self.cleaned_dir / camera_proc, subdirs)
-            
-        logger.info("Created directory structure for data cleaning")
+        try:
+            for camera_proc in self.cameras.values():
+                subdirs = list(self.data_types.values()) + [LABEL_PROC_DIR]
+                FileProcessor.create_directories(self.cleaned_dir / camera_proc, subdirs)
+                
+            logger.info("Created directory structure for data cleaning")
+        except Exception as e:
+            logger.error(f"Failed to create directory structure: {e}")
+            raise
 
 
 class LabelFileManager:
@@ -85,59 +94,66 @@ class LabelFileManager:
         self.label_dir = label_dir
         self.label_file = label_file
     
-    def clean_label_files(self) -> Tuple[Set[str], Set[str]]:
+    def clean_label_files(self) -> Dict[str, Dict[str, str]]:
         """Clean label files for both cameras and return valid filenames."""
         camera_files = {}
         
-        camera_mappings = [
-            (LEFT_CAM_RAW_DIR, LEFT_CAM_PROC_DIR, 'left'),
-            (RIGHT_CAM_RAW_DIR, RIGHT_CAM_PROC_DIR, 'right')
-        ]
-        
-        for camera_raw, camera_proc, camera_name in camera_mappings:
+        for camera_raw, camera_proc in self.cameras.items():
             source_file = self.raw_dir / camera_raw / self.label_dir / self.label_file
-            dest_file = self.cleaned_dir / camera_proc / LABEL_PROC_DIR / self.label_file
-            
-            valid_files, count = FileProcessor.filter_label_file(source_file, dest_file, set())
-            camera_files[camera_name] = valid_files
-            
-            logger.info(f"Cleaned {count} entries for {camera_name} camera labels")
-        
-        return camera_files.get('left', set()), camera_files.get('right', set())
-    
-    def update_label_files(self, valid_items: Set[str], is_filename_filter: bool = True) -> None:
-        """Update label files to keep only specified items."""
-        for camera_proc in self.cameras.values():
-            label_path = self.cleaned_dir / camera_proc / LABEL_PROC_DIR / self.label_file
-            temp_path = label_path.with_suffix('.tmp')
             
             try:
-                FileProcessor.filter_label_file(label_path, temp_path, valid_items, is_filename_filter)
-                temp_path.replace(label_path)
-                logger.debug(f"Updated label file for {camera_proc}")
+                valid_files_dict = FileProcessor.get_valid_label_files(source_file)
+                camera_files[camera_proc] = valid_files_dict
+                
+                logger.info(f"Loaded {len(valid_files_dict)} entries for {camera_proc} camera labels")
+            except Exception as e:
+                logger.error(f"Failed to process label file for {camera_proc}: {e}")
+                camera_files[camera_proc] = {}
+        
+        return camera_files
+    
+    def update_label_files(self, files_dict: Dict[str, Dict[str, str]], 
+                          valid_items: Set[str]) -> None:
+        """Update label files to keep only specified items."""
+        for camera_proc in self.cameras.values():
+            valid_lines = []
+            label_path = self.cleaned_dir / camera_proc / LABEL_PROC_DIR / self.label_file
+            
+            # Collect valid lines for this camera
+            for valid_item in valid_items:
+                filename_key = f"{valid_item}.jpg"
+                if filename_key in files_dict[camera_proc]:
+                    valid_lines.append(files_dict[camera_proc][filename_key])
+            
+            try:
+                FileProcessor.write_file(label_path, sorted(valid_lines))
+                logger.info(f"Updated label file for {camera_proc} with {len(valid_lines)} entries")
             except Exception as e:
                 logger.error(f"Failed to update label file for {camera_proc}: {e}")
-                if temp_path.exists():
-                    temp_path.unlink()
 
 
 class FileSetAnalyzer:
     """Analyzes and compares file sets between cameras."""
     
     @staticmethod
-    def get_common_files(left_files: Set[str], right_files: Set[str]) -> Set[str]:
+    def get_common_files(files_dict: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
         """Get files common to both camera datasets."""
-        common_files = left_files.intersection(right_files)
+        if LEFT_CAM_PROC_DIR not in files_dict or RIGHT_CAM_PROC_DIR not in files_dict:
+            logger.error("Missing camera data in files dictionary")
+            return {}
         
-        left_only = left_files - right_files
-        right_only = right_files - left_files
+        left_files = set(files_dict[LEFT_CAM_PROC_DIR].keys())
+        right_files = set(files_dict[RIGHT_CAM_PROC_DIR].keys())
+        common_filenames = left_files & right_files
         
-        if left_only:
-            logger.info(f"Files only in left camera: {len(left_only)}")
-        if right_only:
-            logger.info(f"Files only in right camera: {len(right_only)}")
+        common_files = {}
+        for camera_proc in [LEFT_CAM_PROC_DIR, RIGHT_CAM_PROC_DIR]:
+            common_files[camera_proc] = {
+                filename: files_dict[camera_proc][filename] 
+                for filename in common_filenames
+            }
         
-        logger.info(f"Common files between cameras: {len(common_files)}")
+        logger.info(f"Found {len(common_filenames)} common files between cameras")
         return common_files
 
 
@@ -148,9 +164,40 @@ class FileCopier:
         self.raw_dir = raw_dir
         self.cleaned_dir = cleaned_dir
         self.cameras = cameras
-    
-    def copy_files_by_type(self, filenames: Set[str], file_type: FileType) -> CleaningResult:
-        """Copy files from source to destination with optional validation."""
+
+    def _copy_files_for_camera(self, filenames: Set[str], source_dir: Path, 
+                              dest_dir: Path, file_type: FileType) -> CopyResult:
+        """Copy files for a single camera and return results."""
+        stats = ProcessingStats()
+        valid_files = set()
+        
+        if not source_dir.exists():
+            logger.warning(f"Source directory not found: {source_dir}")
+            return CopyResult(stats, valid_files)
+        
+        for filename in filenames:
+            source_file = source_dir / f"{filename}{file_type.extension}"
+            
+            if not source_file.exists():
+                logger.debug(f"Source file not found: {source_file}")
+                stats.add_skipped()
+                continue
+        
+            # Copy file
+            try:
+                dest_file = dest_dir / source_file.name
+                shutil.copy2(source_file, dest_file)
+                stats.add_copied()
+                valid_files.add(filename)
+                logger.debug(f"Successfully copied: {source_file} -> {dest_file}")
+            except Exception as e:
+                logger.error(f"Failed to copy {source_file}: {e}")
+                stats.add_skipped()
+        
+        return CopyResult(stats, valid_files)
+
+    def copy_files_by_type(self, filenames: Set[str], file_type: FileType) -> Set[str]:
+        """Copy files from source to destination and return successfully processed files."""
         successfully_processed = set()
         total_stats = ProcessingStats()
         
@@ -158,105 +205,67 @@ class FileCopier:
             source_dir = self.raw_dir / camera_raw / file_type.raw_dir
             dest_dir = self.cleaned_dir / camera_proc / file_type.proc_dir
             
-            if not source_dir.exists():
-                logger.warning(f"Source directory not found: {source_dir}")
-                continue
+            result = self._copy_files_for_camera(filenames, source_dir, dest_dir, file_type)
             
-            result = self._copy_camera_files(filenames, source_dir, dest_dir, file_type)
-            successfully_processed.update(result.valid_files)
+            # For the first camera, initialize the set. For subsequent cameras,
+            # only keep files that were successfully copied for ALL cameras
+            if not successfully_processed:
+                successfully_processed = result.valid_files.copy()
+            else:
+                successfully_processed &= result.valid_files
+            
             total_stats.add_copied(result.stats.copied)
             total_stats.add_skipped(result.stats.skipped)
             
             self._log_copy_results(camera_raw, file_type, result.stats)
         
-        return CleaningResult(successfully_processed, total_stats)
-    
-    def _copy_camera_files(self, filenames: Set[str], source_dir: Path, 
-                          dest_dir: Path, file_type: FileType) -> CleaningResult:
-        """Copy files for a single camera."""
-        valid_files = set()
-        stats = ProcessingStats()
-        
-        for filename in filenames:
-            source_file, file_key = self._determine_source_file(filename, source_dir, file_type)
-            
-            if not source_file.exists():
-                continue
-            
-            # Validate file if needed
-            if file_type.check_nan and not FileProcessor.check_file_for_nan(source_file):
-                stats.add_skipped(1)
-                continue
-            
-            # Copy file
-            try:
-                dest_file = dest_dir / source_file.name
-                shutil.copy2(source_file, dest_file)
-                stats.add_copied(1)
-                valid_files.add(file_key)
-            except Exception as e:
-                logger.error(f"Failed to copy {source_file}: {e}")
-                stats.add_skipped(1)
-        
-        return CleaningResult(valid_files, stats)
-    
-    def _determine_source_file(self, filename: str, source_dir: Path, 
-                              file_type: FileType) -> Tuple[Path, str]:
-        """Determine the source file path and key based on file type."""
-        if file_type == FileType.IMAGE:
-            return source_dir / filename, filename
-        else:
-            # For non-image files, use index-based naming
-            index = filename.split('.')[0] if '.' in filename else filename
-            source_file = source_dir / f"{index}{file_type.extension}"
-            return source_file, index
+        logger.info(f"Successfully processed {len(successfully_processed)} {file_type.name.lower()} files across all cameras")
+        return successfully_processed
     
     def _log_copy_results(self, camera_name: str, file_type: FileType, stats: ProcessingStats) -> None:
         """Log the results of file copying operation."""
         status_msg = f"Copied {stats.copied} {file_type.extension} files from {camera_name}/{file_type.raw_dir}"
         if stats.skipped > 0:
-            status_msg += f" (skipped {stats.skipped} invalid files)"
+            status_msg += f" (skipped {stats.skipped} files)"
         logger.info(status_msg)
 
 
-class FileCleanupManager:
-    """Handles cleanup of invalid files."""
+class ProbeFileValidator:
+    """Specialized validator for probe files."""
     
-    def __init__(self, cleaned_dir: Path, cameras: Dict[str, str]):
-        self.cleaned_dir = cleaned_dir
+    def __init__(self, raw_dir: Path, cameras: Dict[str, str]):
+        self.raw_dir = raw_dir
         self.cameras = cameras
     
-    def cleanup_invalid_files(self, valid_indices: Set[str]) -> ProcessingStats:
-        """Remove image files without valid probe axis files."""
-        valid_filenames = {f"{idx}.jpg" for idx in valid_indices}
-        total_stats = ProcessingStats()
+    def get_valid_probe_indices(self, file_indices: Set[str]) -> Set[str]:
+        """Process probe axis files and return indices of files valid across all cameras."""
+        valid_indices = set()
         
-        for camera_proc in self.cameras.values():
-            images_dir = self.cleaned_dir / camera_proc / IMG_PROC_DIR
-            if not images_dir.exists():
-                continue
+        for index in file_indices:
+            # Check if ALL cameras have valid probe files for this index
+            is_valid_for_all_cameras = True
             
-            removed_count = self._remove_invalid_images(images_dir, valid_filenames)
-            total_stats.add_removed(removed_count)
+            for camera in self.cameras.keys():
+                probe_file = self.raw_dir / camera / PROBE_RAW_DIR / f"{index}.txt"
+                
+                # First check if file exists, then check for NaN values
+                if not probe_file.exists():
+                    logger.debug(f"Probe file not found: {probe_file}")
+                    is_valid_for_all_cameras = False
+                    break
+                
+                if not FileProcessor.check_file_for_nan(probe_file):
+                    logger.debug(f"NaN values found in probe file: {probe_file}")
+                    is_valid_for_all_cameras = False
+                    break
             
-            if removed_count > 0:
-                logger.info(f"Removed {removed_count} invalid image files from {camera_proc}")
+            if is_valid_for_all_cameras:
+                valid_indices.add(index)
+            else:
+                logger.debug(f"Index {index} excluded - invalid probe files in one or more cameras")
         
-        return total_stats
-    
-    def _remove_invalid_images(self, images_dir: Path, valid_filenames: Set[str]) -> int:
-        """Remove invalid image files from a directory."""
-        removed_count = 0
-        
-        try:
-            for image_file in images_dir.glob('*.jpg'):
-                if image_file.name not in valid_filenames:
-                    image_file.unlink()
-                    removed_count += 1
-        except Exception as e:
-            logger.error(f"Error during cleanup in {images_dir}: {e}")
-        
-        return removed_count
+        logger.info(f"Valid probe files found for {len(valid_indices)} out of {len(file_indices)} indices")
+        return valid_indices
 
 
 class DataCleaner:
@@ -267,16 +276,14 @@ class DataCleaner:
         self.cleaned_dir = cleaned_dir
         self.cameras = CAMERA_CONFIG
         self.data_types = DATA_TYPE_CONFIG
-        self.label_dir = LABEL_RAW_DIR
-        self.label_file = LABEL_FILE
         
         # Initialize managers
         self.directory_manager = DirectoryManager(cleaned_dir, self.cameras, self.data_types)
         self.label_manager = LabelFileManager(
-            raw_dir, cleaned_dir, self.cameras, self.label_dir, self.label_file
+            raw_dir, cleaned_dir, self.cameras, LABEL_RAW_DIR, LABEL_FILE
         )
         self.file_copier = FileCopier(raw_dir, cleaned_dir, self.cameras)
-        self.cleanup_manager = FileCleanupManager(cleaned_dir, self.cameras)
+        self.probe_validator = ProbeFileValidator(raw_dir, self.cameras)
     
     def clean_data(self) -> None:
         """Execute the complete data cleaning pipeline."""
@@ -284,55 +291,77 @@ class DataCleaner:
         
         try:
             # Step 1: Create directory structure
+            logger.info("Step 1: Creating directory structure")
             self.directory_manager.create_directory_structure()
             
             # Step 2: Clean label files and find common files
-            logger.info("Step 1: Cleaning label files")
+            logger.info("Step 2: Processing label files")
             common_files = self._process_label_files()
             
-            if not common_files:
+            if not common_files or not any(common_files.values()):
                 logger.error("No common files found between cameras!")
                 return
             
-            # Step 3: Process different file types
-            logger.info("Step 2: Filtering label files for common files")
-            self.label_manager.update_label_files(common_files)
+            # Step 3: Validate probe files and get valid indices
+            logger.info("Step 3: Validating probe files")
+            file_indices = self._extract_file_indices(common_files)
+            valid_file_indices = self.probe_validator.get_valid_probe_indices(file_indices)
             
-            # Step 4: Copy files and handle validation
-            final_valid_files = self._copy_all_file_types(common_files)
+            if not valid_file_indices:
+                logger.error("No valid probe files found!")
+                return
             
-            logger.info(f"Data cleaning completed! Total files processed: {len(final_valid_files)}")
+            # Step 4: Update label files with valid entries
+            logger.info("Step 4: Updating label files")
+            self.label_manager.update_label_files(common_files, valid_file_indices)
+            
+            # Step 5: Copy all file types
+            logger.info("Step 5: Copying files")
+            final_valid_files = self._copy_all_file_types(valid_file_indices)
+            
+            logger.info(f"Data cleaning completed successfully! Final files processed: {len(final_valid_files)}")
             
         except Exception as e:
-            logger.error(f"Data cleaning failed: {e}")
+            logger.error(f"Data cleaning pipeline failed: {e}")
             raise
     
-    def _process_label_files(self) -> Set[str]:
+    def _process_label_files(self) -> Dict[str, Dict[str, str]]:
         """Process label files and return common files."""
-        left_files, right_files = self.label_manager.clean_label_files()
-        common_files = FileSetAnalyzer.get_common_files(left_files, right_files)
+        files_dict = self.label_manager.clean_label_files()
+        common_files = FileSetAnalyzer.get_common_files(files_dict)
         return common_files
     
-    def _copy_all_file_types(self, common_files: Set[str]) -> Set[str]:
+    def _extract_file_indices(self, common_files: Dict[str, Dict[str, str]]) -> Set[str]:
+        """Extract file indices from common files."""
+        # Get filenames from any camera (they should be the same due to common files)
+        first_camera = next(iter(common_files.values()))
+        filenames = set(first_camera.keys())
+        file_indices = FileProcessor.get_file_indices(filenames)
+        
+        logger.info(f"Extracted {len(file_indices)} file indices from common files")
+        return file_indices
+
+    def _copy_all_file_types(self, valid_files: Set[str]) -> Set[str]:
         """Copy all file types and return final valid file set."""
-        # Copy image files
-        logger.info("Step 3: Copying image files")
-        self.file_copier.copy_files_by_type(common_files, FileType.IMAGE)
+        final_valid_files = valid_files.copy()
         
-        # Handle probe files with NaN checking
-        logger.info("Step 4: Copying probe axis files (checking for NaN)")
-        file_indices = FileProcessor.get_file_indices(common_files)
-        probe_result = self.file_copier.copy_files_by_type(file_indices, FileType.PROBE)
-        valid_probe_indices = probe_result.valid_files
+        file_types = [FileType.IMAGE, FileType.PROBE, FileType.DEPTH]
         
-        # Update files based on valid probe indices
-        if len(valid_probe_indices) < len(file_indices):
-            logger.info("Step 5: Updating files after probe filtering")
-            self.label_manager.update_label_files(valid_probe_indices, is_filename_filter=False)
-            self.cleanup_manager.cleanup_invalid_files(valid_probe_indices)
+        for i, file_type in enumerate(file_types, 1):
+            logger.info(f"Step 5.{i}: Copying {file_type.name.lower()} files")
+            
+            try:
+                successfully_copied = self.file_copier.copy_files_by_type(valid_files, file_type)
+                # Keep intersection to ensure all file types are present for each valid file
+                final_valid_files &= successfully_copied
+                
+                if not final_valid_files:
+                    logger.warning(f"No files remain after copying {file_type.name.lower()} files")
+                    break
+                    
+            except Exception as e:
+                logger.error(f"Failed to copy {file_type.name.lower()} files: {e}")
+                raise
         
-        # Copy depth files
-        logger.info("Step 6: Copying depth label files")
-        self.file_copier.copy_files_by_type(valid_probe_indices, FileType.DEPTH)
-        
-        return valid_probe_indices
+        logger.info(f"Final dataset contains {len(final_valid_files)} complete file sets")
+        return final_valid_files
