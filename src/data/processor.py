@@ -203,17 +203,7 @@ class FileValidator:
     
     @staticmethod
     def check_file_for_nan(file_path: Path, separator: str = " ", use_cache: bool = True) -> bool:
-        """
-        Check if a text file contains NaN values with caching support.
-        
-        Args:
-            file_path: Path to the file to validate
-            separator: Separator to use for parsing
-            use_cache: Whether to use validation cache
-            
-        Returns:
-            True if file is valid (no NaN values), False otherwise
-        """
+        """Check if a text file contains NaN values with caching support."""
         # Check cache first
         if use_cache:
             cache_key = (str(file_path), separator)
@@ -267,15 +257,7 @@ class FilenameUtils:
     
     @staticmethod
     def extract_indices(filenames: Set[str]) -> Set[str]:
-        """
-        Extract indices from filenames (e.g., '01097' from '01097.jpg').
-        
-        Args:
-            filenames: Set of filenames
-            
-        Returns:
-            Set of indices (filename without extension)
-        """
+        """Extract indices from filenames (e.g., '01097' from '01097.jpg')."""
         indices = set()
         for filename in filenames:
             # Handle multiple extensions and edge cases
@@ -340,10 +322,6 @@ class LabelFileProcessor:
             x_coord = float(parts[1].strip())
             y_coord = float(parts[2].strip())
             
-            # Validate coordinate ranges (assuming normalized coordinates)
-            if not (0.0 <= x_coord <= 1.0) or not (0.0 <= y_coord <= 1.0):
-                logger.warning(f"Coordinates outside expected range [0,1]: x={x_coord}, y={y_coord}")
-            
         except ValueError as e:
             raise ValueError(f"Invalid coordinates in line: {line}") from e
         
@@ -351,16 +329,7 @@ class LabelFileProcessor:
     
     @staticmethod
     def get_valid_label_files(source_file: Path, use_lazy_parsing: bool = False) -> Dict[str, str]:
-        """
-        Parse and validate label file entries with memory-efficient options.
-        
-        Args:
-            source_file: Path to the label file
-            use_lazy_parsing: Use lazy parsing for large files
-            
-        Returns:
-            Dictionary mapping filename to original line text
-        """
+        """Parse and validate label file entries with memory-efficient options."""
         if not FileSystemOperations.check_file_exists(source_file):
             logger.error(f"Source label file not found: {source_file}")
             return {}
@@ -421,23 +390,11 @@ class LabelFileProcessor:
                           label_dir: str, label_file: str,
                           files_dict: Dict[str, Dict[str, str]] = None,
                           action_name: str = "Processed") -> None:
-        """
-        Process label files by filtering entries for given indices and writing to destination.
-        
-        Args:
-            indices: Set of file indices to include
-            cameras: Dictionary mapping camera names
-            source_dir: Directory to read label files from (if files_dict not provided)
-            dest_dir: Directory to write label files to
-            label_dir: Sub directory of label file
-            label_file: File containing labels
-            files_dict: Pre-loaded files dictionary (optional, will load from source if None)
-            action_name: Description of action for logging (e.g., "Copied", "Updated")
-        """
+        """Process label files by filtering entries for given indices and writing to destination."""
         processed_cameras = []
         failed_cameras = []
         
-        for camera_raw, camera_proc in cameras.items():
+        for _, camera_proc in cameras.items():
             source_label_path = source_dir / camera_proc / label_dir / label_file
             dest_label_path = dest_dir / camera_proc / label_dir / label_file
             
