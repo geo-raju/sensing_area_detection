@@ -14,37 +14,47 @@ The cleaning process handles three main data types:
 
 ```bash
 # Basic cleaning with default settings
-python clean_data.py
+python scripts/clean_data.py
 
 # Custom directories and parallel processing
-python clean_data.py --raw-dir /path/to/raw --cleaned-dir /path/to/clean --max-workers 8
+python scripts/clean_data.py --raw-dir /path/to/raw --cleaned-dir /path/to/clean --max-workers 8
 
 # Validate data without cleaning
-python clean_data.py --validate-only
+python scripts/clean_data.py --validate-only
 ```
 
 ## Directory Structure
 
 ### Input (Raw Data)
 ```
-raw_data/
-├── left_cam/
-│   ├── images/          # .jpg files
-│   ├── probe_data/      # .txt files
-│   ├── depth_maps/      # .npy files
-│   └── labels/          # coordinate labels
-└── right_cam/
-    ├── images/
-    ├── probe_data/
-    ├── depth_maps/
-    └── labels/
+data/
+└── raw/
+    ├── camera0/                        
+    │   ├── laser_off/                  # .jpg files
+    │   ├── laserptGT/                  # coordinate labels
+    |   ├── line_annotation_sample/     # .txt files
+    │   └── depthGT/                    # .npy files
+    └── camera1/
+        ├── laser_off/
+        ├── laserptGT/
+        ├── line_annotation_sample/
+        └── depthGT/
 ```
 
 ### Output (Cleaned Data)
 ```
-cleaned_data/
-├── left_cam_proc/       # Cleaned left camera data
-└── right_cam_proc/      # Cleaned right camera data
+data/
+└── clean/
+    ├── left/                        
+    │   ├── images/                  # .jpg files
+    │   ├── labels/                  # coordinate labels
+    |   ├── probe_axis/              # .txt files
+    │   └── depth_labels/            # .npy files
+    └── right/
+        ├── images/
+        ├── labels/
+        ├── probe_axis/
+        └── depth_labels/
 ```
 
 ## Cleaning Pipeline
@@ -97,19 +107,19 @@ cleaned_data/
 
 ```bash
 # Standard cleaning
-python clean_data.py --raw-dir ./raw_data --cleaned-dir ./clean_data
+python scripts/clean_data.py --raw-dir ./raw_data --cleaned-dir ./clean_data
 
 # High-performance cleaning with validation
-python clean_data.py --max-workers 12 --verbose
+python scripts/clean_data.py --max-workers 12 --verbose
 
 # Test data integrity without cleaning
-python clean_data.py --validate-only --raw-dir ./suspicious_data
+python scripts/clean_data.py --validate-only --raw-dir ./suspicious_data
 
 # Clean existing directory (overwrite)
-python clean_data.py --force-clean --clear-cache
+python scripts/clean_data.py --force-clean --clear-cache
 
 # Quiet operation for automated scripts
-python clean_data.py --quiet --disable-resume
+python scripts/clean_data.py --quiet --disable-resume
 ```
 
 ## Output Statistics
@@ -133,7 +143,7 @@ Common issues and solutions:
 
 ## Dependencies
 
-- Python 3.7+
+- Python 3.11+
 - Standard library modules (pathlib, threading, multiprocessing)
 - NumPy (for .npy file handling)
 - Custom modules: `config.data_config`, `src.data.cleaner`, `src.data.processor`
@@ -144,7 +154,3 @@ Common issues and solutions:
 - Enable `--clear-cache` if data has changed significantly
 - Use `--validate-only` first for large datasets to estimate processing time
 - Monitor disk space - cleaned data may be substantial
-
----
-
-For technical details, see the source code documentation in `cleaner.py` and `processor.py`.
