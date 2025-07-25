@@ -9,7 +9,7 @@ from config.data_config import (
     DATA_TYPE_CONFIG, RIGHT_CAM_PROC_DIR,
     CLEAN_DIR_PATH, PROC_DIR_PATH,
     LEFT_CAM_PROC_DIR, LABEL_PROC_DIR, LABEL_FILE,
-    TRAIN_RATIO, VAL_RATIO, TEST_RATIO, RANDOM_STATE
+    SPLIT_NAMES, TRAIN_RATIO, VAL_RATIO, TEST_RATIO, RANDOM_STATE
 )
 from src.data.processor import FileProcessor
 from src.data.cleaner import (
@@ -23,19 +23,29 @@ logger = logging.getLogger(__name__)
 class DataSplitConfig:
     """Configuration for data splitting with validation."""
     
-    SPLIT_NAMES = ['train', 'val', 'test']
-    SPLIT_RATIOS = {
-        'train': TRAIN_RATIO,
-        'val': VAL_RATIO, 
-        'test': TEST_RATIO
-    }
+    def __init__(self,
+                 train_ratio: float = TRAIN_RATIO,
+                 val_ratio: float = VAL_RATIO,
+                 test_ratio: float = TEST_RATIO,
+                 random_state: int = RANDOM_STATE,
+                 split_names: List[str] = SPLIT_NAMES):  
+        self.split_names = split_names
+        self.train_ratio = train_ratio
+        self.val_ratio = val_ratio
+        self.test_ratio = test_ratio
+        self.random_state = random_state
+        self._validate_ratios()
     
-    @classmethod
-    def validate_ratios(cls) -> None:
+    def _validate_ratios(self) -> None:
         """Validate that split ratios sum to 1.0."""
-        total_ratio = sum(cls.SPLIT_RATIOS.values())
+        total_ratio = self.train_ratio + self.val_ratio + self.test_ratio
         if not abs(total_ratio - 1.0) < 1e-10:
             raise ValueError(f"Split ratios must sum to 1.0, got {total_ratio}")
+    
+    def get_ratios(self) -> Dict[str, float]:
+        """Get train/val/test ratios as a dictionary."""
+        ratios = [self.train_ratio, self.val_ratio, self.test_ratio]
+        return dict(zip(self.split_names, ratios))
 
 
 @dataclass
@@ -68,11 +78,6 @@ class IndexSplitter:
         if not indices:
             logger.warning("No indices provided for splitting")
             return {name: set() for name in ratios.keys()}
-        
-        # Validate ratios
-        total_ratio = sum(ratios.values())
-        if not abs(total_ratio - 1.0) < 1e-10:
-            raise ValueError(f"Split ratios must sum to 1.0, got {total_ratio}")
         
         # Prepare for splitting
         indices_list = sorted(list(indices))
@@ -163,27 +168,38 @@ class DataSplitter:
     """Handles splitting cleaned data into train/val/test sets."""
     
     def __init__(self, cleaned_dir: Path = CLEAN_DIR_PATH, 
-                 processed_dir: Path = PROC_DIR_PATH, 
+                 processed_dir: Path = PROC_DIR_PATH,
+                 train_ratio: float = TRAIN_RATIO, 
+                 val_ratio: float = VAL_RATIO,
+                 test_ratio: float = TEST_RATIO,
+                 random_state: int = RANDOM_STATE, 
                  max_workers: int = 4, enable_resume: bool = True):
         self.cleaned_dir = cleaned_dir
         self.processed_dir = processed_dir
+        self.train_ratio = train_ratio
+        self.val_ratio = val_ratio
+        self.test_ratio = test_ratio
+        self.random_state = random_state
         self.max_workers = max_workers
         self.enable_resume = enable_resume
+        self.left_dir = LEFT_CAM_PROC_DIR
+        self.label_dir = LABEL_PROC_DIR
+        self.label_file = LABEL_FILE
         
         # Configuration
         self.cameras = {LEFT_CAM_PROC_DIR: LEFT_CAM_PROC_DIR,
                         RIGHT_CAM_PROC_DIR: RIGHT_CAM_PROC_DIR}
         self.data_types = DATA_TYPE_CONFIG
-        
-        # Validate configuration
-        DataSplitConfig.validate_ratios()
-        
+
         # Initialize specialized managers
+        self.data_split_config = DataSplitConfig(
+            self.train_ratio, self.val_ratio, self.test_ratio, self.random_state
+        )
         self.directory_manager = SplitDirectoryManager(
-            processed_dir, self.cameras, self.data_types, LABEL_PROC_DIR
+            self.processed_dir, self.cameras, self.data_types, self.label_dir
         )
         self.label_manager = SplitLabelManager(
-            self.cameras, LABEL_PROC_DIR, LABEL_FILE
+            self.cameras, self.label_dir, self.label_file
         )
         self.index_splitter = IndexSplitter()
         
@@ -221,7 +237,7 @@ class DataSplitter:
             # Step 2: Split indices into train/val/test
             self.progress_tracker.update_progress(10, "Splitting indices into sets")
             split_indices = self.index_splitter.split_indices(
-                available_indices, DataSplitConfig.SPLIT_RATIOS, RANDOM_STATE
+                available_indices, self.data_split_config.get_ratios(), self.random_state
             )
             
             # Set up progress tracking
@@ -230,7 +246,7 @@ class DataSplitter:
             
             # Step 3: Create directory structure for each split
             self.progress_tracker.update_progress(20, "Creating directory structure")
-            self.directory_manager.create_split_directories(DataSplitConfig.SPLIT_NAMES)
+            self.directory_manager.create_split_directories(self.data_split_config.split_names)
             
             # Step 4: Copy files for each split
             self.progress_tracker.update_progress(30, "Copying files to split directories")
@@ -253,7 +269,7 @@ class DataSplitter:
     
     def _get_available_indices(self) -> Set[str]:
         """Get all available file indices from the cleaned data."""
-        label_path = self.cleaned_dir / LEFT_CAM_PROC_DIR / LABEL_PROC_DIR / LABEL_FILE
+        label_path = self.cleaned_dir / self.left_dir / self.label_dir / self.label_file
         
         if not FileProcessor.check_file_exists(label_path):
             logger.error(f"Label file not found: {label_path}")
@@ -365,7 +381,7 @@ class DataSplitter:
         # Log successful splits
         if successful_results:
             logger.info("SUCCESSFUL SPLITS:")
-            for split_name in DataSplitConfig.SPLIT_NAMES:
+            for split_name in self.data_split_config.split_names:
                 if split_name in successful_results:
                     result = successful_results[split_name]
                     percentage = result.get_percentage(total_files)
@@ -413,40 +429,3 @@ class DataSplitter:
         except Exception as e:
             logger.error(f"Split validation failed: {e}")
             return False
-
-
-def main():
-    """Main function to run the data splitting with enhanced error handling."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    try:
-        # Initialize data splitter with configuration
-        splitter = DataSplitter(
-            cleaned_dir=CLEAN_DIR_PATH,
-            processed_dir=PROC_DIR_PATH,
-            max_workers=4,
-            enable_resume=True
-        )
-        
-        # Run splitting pipeline
-        results = splitter.split_data()
-        
-        # Validate results
-        if splitter.validate_splits(results):
-            logger.info("Data splitting and validation completed successfully!")
-        else:
-            logger.error("Data splitting validation failed!")
-            return 1
-        
-        return 0
-        
-    except Exception as e:
-        logger.error(f"Data splitting failed: {e}")
-        return 1
-
-
-if __name__ == "__main__":
-    exit(main())
