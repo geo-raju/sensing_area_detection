@@ -120,21 +120,9 @@ class DirectoryManager:
         """Create the directory structure with atomic operations."""
         with self._creation_lock:
             try:
-                directories_to_create = []
-                
-                # Collect all directories that need to be created
                 for camera_proc in self.cameras.values():
-                    base_camera_dir = self.base_dir / camera_proc
-                    directories_to_create.append(base_camera_dir)
-                    
-                    for data_type in self.data_types.values():
-                        directories_to_create.append(base_camera_dir / data_type)
-                    
-                    directories_to_create.append(base_camera_dir / self.label_dir)
-                
-                # Create all directories
-                for directory in directories_to_create:
-                    directory.mkdir(parents=True, exist_ok=True)
+                    subdirs = list(self.data_types.values()) + [self.label_dir]
+                    FileProcessor.create_directories(self.base_dir / camera_proc, subdirs)
                     
                 logger.info(f"Created directory structure in {self.base_dir}")
                 
