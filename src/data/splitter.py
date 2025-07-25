@@ -64,17 +64,7 @@ class IndexSplitter:
     @staticmethod
     def split_indices(indices: Set[str], ratios: Dict[str, float], 
                      random_state: int = None) -> Dict[str, Set[str]]:
-        """
-        Split file indices into train/val/test sets with proper validation.
-        
-        Args:
-            indices: Set of file indices to split
-            ratios: Dictionary of split names to ratios
-            random_state: Random seed for reproducibility
-            
-        Returns:
-            Dictionary mapping split names to sets of indices
-        """
+        """Split file indices into train/val/test sets with proper validation."""
         if not indices:
             logger.warning("No indices provided for splitting")
             return {name: set() for name in ratios.keys()}
@@ -152,11 +142,7 @@ class SplitLabelManager:
     
     def process_split_labels(self, split_name: str, indices: Set[str], 
                            source_dir: Path, dest_dir: Path, action: str = "Processed") -> None:
-        """
-        Process label files for a split using the existing processor functionality.
-        
-        This method reuses FileProcessor.process_label_files with proper parameters.
-        """
+        """Process label files for a split using the existing processor functionality."""
         try:
             FileProcessor.process_label_files(
                 indices=indices,
@@ -174,12 +160,7 @@ class SplitLabelManager:
 
 
 class DataSplitter:
-    """
-    Handles splitting cleaned data into train/val/test sets.
-    
-    This class maximizes reuse of existing components from cleaner.py and processor.py
-    while providing specialized functionality for data splitting.
-    """
+    """Handles splitting cleaned data into train/val/test sets."""
     
     def __init__(self, cleaned_dir: Path = CLEAN_DIR_PATH, 
                  processed_dir: Path = PROC_DIR_PATH, 
@@ -206,7 +187,6 @@ class DataSplitter:
         )
         self.index_splitter = IndexSplitter()
         
-        # Reuse existing managers from cleaner.py
         self.file_copier = FileCopier(
             self.cleaned_dir, self.processed_dir, self.cameras, self.max_workers
         )
@@ -272,11 +252,7 @@ class DataSplitter:
             raise
     
     def _get_available_indices(self) -> Set[str]:
-        """
-        Get all available file indices from the cleaned data.
-        
-        Reuses FileProcessor functionality for consistency with cleaner.py.
-        """
+        """Get all available file indices from the cleaned data."""
         label_path = self.cleaned_dir / LEFT_CAM_PROC_DIR / LABEL_PROC_DIR / LABEL_FILE
         
         if not FileProcessor.check_file_exists(label_path):
@@ -329,11 +305,7 @@ class DataSplitter:
         return results
     
     def _copy_split_files(self, split_name: str, indices: Set[str], split_dir: Path) -> SplitResult:
-        """
-        Copy all file types for a single split.
-        
-        Maximizes reuse of FileCopier and other existing components.
-        """
+        """Copy all file types for a single split."""
         total_stats = ProcessingStats()
         final_valid_indices = indices.copy()
         
