@@ -4,7 +4,7 @@ Contains all configuration constants and factory functions.
 """
 
 from pathlib import Path
-from typing import Dict, Final
+from typing import Dict, Final, List
 
 # Directory paths
 BASE_DIR: Final[Path] = Path(__file__).parent.parent
@@ -28,6 +28,7 @@ RIGHT_CAM_RAW_DIR: Final[str] = 'camera1'
 RIGHT_CAM_PROC_DIR: Final[str] = 'right'
 
 # Data split configuration
+SPLIT_NAMES:Final[List] = ['train', 'val', 'test']
 TRAIN_RATIO: Final[float] = 0.7
 VAL_RATIO: Final[float] = 0.15
 TEST_RATIO: Final[float] = 0.15
