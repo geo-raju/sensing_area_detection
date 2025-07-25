@@ -307,22 +307,16 @@ class DataSplitterRunner:
             self.config.processed_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"Output directory prepared: {self.config.processed_dir}")
             
-            # Initialize the DataSplitter with configuration
             splitter = DataSplitter(
                 cleaned_dir=self.config.cleaned_dir,
                 processed_dir=self.config.processed_dir,
+                train_ratio=self.config.train_ratio,
+                val_ratio=self.config.val_ratio,
+                test_ratio=self.config.test_ratio,
+                random_state=self.config.random_state,
                 max_workers=self.config.max_workers,
                 enable_resume=self.config.enable_resume
             )
-            
-            # Override split ratios if provided
-            if self._has_custom_ratios():
-                logger.info("Using custom split ratios from command line")
-                splitter.index_splitter.SPLIT_RATIOS = {
-                    'train': self.config.train_ratio,
-                    'val': self.config.val_ratio,
-                    'test': self.config.test_ratio
-                }
             
             # Execute the splitting process
             results = splitter.split_data()
@@ -365,15 +359,6 @@ class DataSplitterRunner:
         if self.config.summary_file:
             logger.info(f"Summary file: {self.config.summary_file}")
         logger.info("=" * 50)
-    
-    def _has_custom_ratios(self) -> bool:
-        """Check if custom ratios were provided."""
-        return (
-            self.config.train_ratio != TRAIN_RATIO or
-            self.config.val_ratio != VAL_RATIO or
-            self.config.test_ratio != TEST_RATIO
-        )
-
 
 def setup_logging_level(verbose: bool, quiet: bool) -> None:
     """Setup logging level based on verbosity flags."""
