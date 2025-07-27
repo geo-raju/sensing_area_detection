@@ -1,431 +1,196 @@
+from sklearn.model_selection import train_test_split
+from typing import List, Tuple, Dict, Optional
 import logging
-from pathlib import Path
-from typing import Set, Dict, List
+import pandas as pd
 from dataclasses import dataclass
-import random
-import time
+from pathlib import Path
 
-from config.data_config import (
-    DATA_TYPE_CONFIG, RIGHT_CAM_PROC_DIR,
-    CLEAN_DIR_PATH, PROC_DIR_PATH,
-    LEFT_CAM_PROC_DIR, LABEL_PROC_DIR, LABEL_FILE,
-    SPLIT_NAMES, TRAIN_RATIO, VAL_RATIO, TEST_RATIO, RANDOM_STATE
-)
-from src.data.processor import FileProcessor
-from src.data.cleaner import (
-    FileType, FileCopier, 
-    ProcessingStats, ProgressTracker, StateManager
-)
+from src.data.dataframe_file_processor import DataFrameFileProcessor
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 
-class DataSplitConfig:
-    """Configuration for data splitting with validation."""
-    
-    def __init__(self,
-                 train_ratio: float = TRAIN_RATIO,
-                 val_ratio: float = VAL_RATIO,
-                 test_ratio: float = TEST_RATIO,
-                 random_state: int = RANDOM_STATE,
-                 split_names: List[str] = SPLIT_NAMES):  
-        self.split_names = split_names
-        self.train_ratio = train_ratio
-        self.val_ratio = val_ratio
-        self.test_ratio = test_ratio
-        self.random_state = random_state
-        self._validate_ratios()
-    
-    def _validate_ratios(self) -> None:
-        """Validate that split ratios sum to 1.0."""
-        total_ratio = self.train_ratio + self.val_ratio + self.test_ratio
-        if not abs(total_ratio - 1.0) < 1e-10:
-            raise ValueError(f"Split ratios must sum to 1.0, got {total_ratio}")
-    
-    def get_ratios(self) -> Dict[str, float]:
-        """Get train/val/test ratios as a dictionary."""
-        ratios = [self.train_ratio, self.val_ratio, self.test_ratio]
-        return dict(zip(self.split_names, ratios))
-
-
 @dataclass
-class SplitResult:
-    """Result of data splitting operation with enhanced metrics."""
-    split_name: str
-    file_indices: Set[str]
-    stats: ProcessingStats
-    success: bool = True
-    error_message: str = ""
+class SplitConfig:
+    """Configuration class for data organization parameters."""
+    train_ratio: float = 0.7
+    val_ratio: float = 0.15
+    test_ratio: float = 0.15
+    random_state: int = 42
+    base_dir: Path = Path(__file__).parent.parent.parent
     
-    def get_file_count(self) -> int:
-        """Get the number of files in this split."""
-        return len(self.file_indices)
-    
-    def get_percentage(self, total_files: int) -> float:
-        """Get percentage of total files this split represents."""
-        if total_files == 0:
-            return 0.0
-        return (self.get_file_count() / total_files) * 100
+    def __post_init__(self):
+        # Validate ratios
+        if not abs(self.train_ratio + self.val_ratio + self.test_ratio - 1.0) < 1e-6:
+            raise ValueError(f"Ratios must sum to 1.0. Got: {self.train_ratio + self.val_ratio + self.test_ratio}")
+        
+        if any(ratio <= 0 for ratio in [self.train_ratio, self.val_ratio, self.test_ratio]):
+            raise ValueError("All ratios must be positive")
 
 
-class IndexSplitter:
-    """Handles the logic for splitting file indices into train/val/test sets."""
+class DatasetSplitter(DataFrameFileProcessor):
+    """Handles splitting dataset indices into train/validation/test sets."""
     
-    @staticmethod
-    def split_indices(indices: Set[str], ratios: Dict[str, float], 
-                     random_state: int = None) -> Dict[str, Set[str]]:
-        """Split file indices into train/val/test sets with proper validation."""
+    def __init__(self, config: Optional[SplitConfig] = None):
+        """
+        Initialize the DatasetSplitter.
+        
+        Args:
+            config: Configuration object with split ratios and validation
+        """
+        
+        self.config = config or SplitConfig()
+        # Fix the circular reference issues
+        self.train_ratio = self.config.train_ratio
+        self.val_ratio = self.config.val_ratio
+        self.test_ratio = self.config.test_ratio
+        self.random_state = self.config.random_state
+        self.base_dir = self.config.base_dir
+        
+        # Calculate split ratios for sklearn
+        self.temp_ratio = self.val_ratio + self.test_ratio  # Combined val+test ratio
+        self.val_test_split_ratio = self.test_ratio / self.temp_ratio  # Test ratio within val+test
+        
+        logger.info(f"Initialized DatasetSplitter with ratios - Train: {self.train_ratio}, Val: {self.val_ratio}, Test: {self.test_ratio}")
+    
+    def split_indices(self, indices: List[str]) -> Tuple[List[str], List[str], List[str]]:
+        """
+        Split indices into train, validation, and test sets.
+        
+        Args:
+            indices: List of indices to split
+            
+        Returns:
+            Tuple of (train_indices, val_indices, test_indices)
+        """
         if not indices:
-            logger.warning("No indices provided for splitting")
-            return {name: set() for name in ratios.keys()}
+            raise ValueError("Cannot split empty indices list")
         
-        # Prepare for splitting
-        indices_list = sorted(list(indices))
-        if random_state is not None:
-            random.seed(random_state)
-        random.shuffle(indices_list)
+        if len(indices) < 3:
+            raise ValueError(f"Need at least 3 indices to create 3 splits. Got: {len(indices)}")
         
-        total_files = len(indices_list)
-        splits = {}
-        start_idx = 0
+        logger.info(f"Splitting {len(indices)} indices with ratios {self.train_ratio}/{self.val_ratio}/{self.test_ratio}")
         
-        # Calculate splits (all but last use ratio, last gets remainder)
-        split_names = list(ratios.keys())
-        for i, split_name in enumerate(split_names):
-            if i == len(split_names) - 1:
-                # Last split gets remaining files
-                split_indices = set(indices_list[start_idx:])
-            else:
-                split_size = int(total_files * ratios[split_name])
-                split_indices = set(indices_list[start_idx:start_idx + split_size])
-                start_idx += split_size
-            
-            splits[split_name] = split_indices
-            
-            # Log split information
-            percentage = len(split_indices) / total_files * 100 if total_files > 0 else 0
-            logger.info(f"{split_name.capitalize()} set: {len(split_indices)} files ({percentage:.1f}%)")
-        
-        return splits
-
-
-class SplitDirectoryManager:
-    """Manages directory creation for data splits, extending DirectoryManager."""
-    
-    def __init__(self, base_dir: Path, cameras: Dict[str, str], 
-                 data_types: Dict[str, str], label_dir: str):
-        self.base_dir = base_dir
-        self.cameras = cameras
-        self.data_types = data_types
-        self.label_dir = label_dir
-    
-    def create_split_directories(self, split_names: List[str]) -> None:
-        """Create directory structure for all splits."""
-        try:
-            for split_name in split_names:
-                split_dir = self.base_dir / split_name
-                
-                # Create camera subdirectories with all data types
-                for camera_proc in self.cameras.values():
-                    subdirs = list(self.data_types.values()) + [self.label_dir]
-                    FileProcessor.create_directories(split_dir / camera_proc, subdirs)
-            
-            logger.info(f"Created directory structure for splits: {', '.join(split_names)}")
-            
-        except Exception as e:
-            logger.error(f"Failed to create split directories: {e}")
-            raise
-
-
-class SplitLabelManager:
-    """Manages label file operations for splits, extending LabelFileManager functionality."""
-    
-    def __init__(self, cameras: Dict[str, str], label_dir: str, label_file: str):
-        self.cameras = cameras
-        self.label_dir = label_dir
-        self.label_file = label_file
-    
-    def process_split_labels(self, split_name: str, indices: Set[str], 
-                           source_dir: Path, dest_dir: Path, action: str = "Processed") -> None:
-        """Process label files for a split using the existing processor functionality."""
-        try:
-            FileProcessor.process_label_files(
-                indices=indices,
-                cameras=self.cameras,
-                source_dir=source_dir,
-                dest_dir=dest_dir,
-                label_dir=self.label_dir,
-                label_file=self.label_file,
-                action_name=f"{action} for {split_name}"
-            )
-            
-        except Exception as e:
-            logger.error(f"Failed to process label files for {split_name}: {e}")
-            raise
-
-
-class DataSplitter:
-    """Handles splitting cleaned data into train/val/test sets."""
-    
-    def __init__(self, cleaned_dir: Path = CLEAN_DIR_PATH, 
-                 processed_dir: Path = PROC_DIR_PATH,
-                 train_ratio: float = TRAIN_RATIO, 
-                 val_ratio: float = VAL_RATIO,
-                 test_ratio: float = TEST_RATIO,
-                 random_state: int = RANDOM_STATE, 
-                 max_workers: int = 4, enable_resume: bool = True):
-        self.cleaned_dir = cleaned_dir
-        self.processed_dir = processed_dir
-        self.train_ratio = train_ratio
-        self.val_ratio = val_ratio
-        self.test_ratio = test_ratio
-        self.random_state = random_state
-        self.max_workers = max_workers
-        self.enable_resume = enable_resume
-        self.left_dir = LEFT_CAM_PROC_DIR
-        self.label_dir = LABEL_PROC_DIR
-        self.label_file = LABEL_FILE
-        
-        # Configuration
-        self.cameras = {LEFT_CAM_PROC_DIR: LEFT_CAM_PROC_DIR,
-                        RIGHT_CAM_PROC_DIR: RIGHT_CAM_PROC_DIR}
-        self.data_types = DATA_TYPE_CONFIG
-
-        # Initialize specialized managers
-        self.data_split_config = DataSplitConfig(
-            self.train_ratio, self.val_ratio, self.test_ratio, self.random_state
+        # First split: Train vs (Val + Test)
+        train_indices, temp_indices = train_test_split(
+            indices,
+            test_size=self.temp_ratio,
+            random_state=self.random_state,
+            shuffle=True
         )
-        self.directory_manager = SplitDirectoryManager(
-            self.processed_dir, self.cameras, self.data_types, self.label_dir
-        )
-        self.label_manager = SplitLabelManager(
-            self.cameras, self.label_dir, self.label_file
-        )
-        self.index_splitter = IndexSplitter()
         
-        self.file_copier = FileCopier(
-            self.cleaned_dir, self.processed_dir, self.cameras, self.max_workers
+        # Second split: Validation vs Test (from remaining temp_ratio)
+        val_indices, test_indices = train_test_split(
+            temp_indices,
+            test_size=self.val_test_split_ratio,
+            random_state=self.random_state,
+            shuffle=True
         )
-        self.progress_tracker = ProgressTracker()
         
-        # State management for resume capability
-        if self.enable_resume:
-            state_file = self.processed_dir / '.splitting_state.json'
-            self.state_manager = StateManager(state_file)
+        # Log results
+        logger.info(f"Split complete - Train: {len(train_indices)}, Val: {len(val_indices)}, Test: {len(test_indices)}")
+        self._log_split_statistics(len(indices), len(train_indices), len(val_indices), len(test_indices))
+        
+        return train_indices, val_indices, test_indices
+    
+    def _log_split_statistics(self, total: int, train_count: int, val_count: int, test_count: int) -> None:
+        """Log detailed statistics about the split."""
+        train_actual = train_count / total
+        val_actual = val_count / total
+        test_actual = test_count / total
+        
+        logger.info(f"Actual ratios - Train: {train_actual:.3f}, Val: {val_actual:.3f}, Test: {test_actual:.3f}")
+    
+    def save_split_files(self, train_indices: List[str], val_indices: List[str], test_indices: List[str],
+                        output_dir: Optional[str] = None, filenames: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        """
+        Save split indices to text files.
+        
+        Args:
+            train_indices: Training indices
+            val_indices: Validation indices  
+            test_indices: Test indices
+            output_dir: Directory to save files (default: "split" subdirectory)
+            filenames: Custom filenames for splits (default: train.txt, val.txt, test.txt)
+            
+        Returns:
+            Dictionary mapping split names to file paths
+        """
+        # Use the base_dir from config
+        if output_dir:
+            output_path = Path(output_dir)
         else:
-            self.state_manager = None
-    
-    def split_data(self) -> Dict[str, SplitResult]:
-        """Execute the complete data splitting pipeline with progress tracking."""
-        logger.info("Starting enhanced data splitting pipeline")
-        start_time = time.time()
+            output_path = Path(self.config.base_dir) / "data" / "indices" / "split"
+        output_path.mkdir(parents=True, exist_ok=True)
         
-        try:
-            # Check for resume capability
-            if self.enable_resume and self.state_manager:
-                saved_state = self.state_manager.load_state()
-                if saved_state:
-                    logger.info(f"Resume capability available from stage: {saved_state.get('stage')}")
-            
-            # Step 1: Get all available file indices from cleaned data
-            self.progress_tracker.update_progress(0, "Gathering available file indices")
-            available_indices = self._get_available_indices()
-            
-            if not available_indices:
-                raise ValueError("No files found in cleaned data!")
-            
-            # Step 2: Split indices into train/val/test
-            self.progress_tracker.update_progress(10, "Splitting indices into sets")
-            split_indices = self.index_splitter.split_indices(
-                available_indices, self.data_split_config.get_ratios(), self.random_state
-            )
-            
-            # Set up progress tracking
-            total_operations = sum(len(indices) for indices in split_indices.values()) * len(FileType)
-            self.progress_tracker.set_total_files(total_operations)
-            
-            # Step 3: Create directory structure for each split
-            self.progress_tracker.update_progress(20, "Creating directory structure")
-            self.directory_manager.create_split_directories(self.data_split_config.split_names)
-            
-            # Step 4: Copy files for each split
-            self.progress_tracker.update_progress(30, "Copying files to split directories")
-            results = self._copy_files_to_splits(split_indices)
-            
-            # Save completion state
-            if self.state_manager:
-                self.state_manager.save_state("completed", {"results": len(results)})
-                self.state_manager.clear_state()
-            
-            elapsed_time = time.time() - start_time
-            logger.info(f"Data splitting completed successfully in {elapsed_time:.1f}s!")
-            self._log_split_summary(results)
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Data splitting pipeline failed: {e}")
-            raise
-    
-    def _get_available_indices(self) -> Set[str]:
-        """Get all available file indices from the cleaned data."""
-        label_path = self.cleaned_dir / self.left_dir / self.label_dir / self.label_file
+        splits = {
+            'train': train_indices,
+            'val': val_indices,
+            'test': test_indices
+        }
         
-        if not FileProcessor.check_file_exists(label_path):
-            logger.error(f"Label file not found: {label_path}")
-            return set()
+        saved_files = {}
         
-        try:
-            files_dict = FileProcessor.get_valid_label_files(label_path)
-            filenames = set(files_dict.keys())
-            indices = FileProcessor.get_file_indices(filenames)
-            
-            logger.info(f"Found {len(indices)} available file indices")
-            return indices
-            
-        except Exception as e:
-            logger.error(f"Failed to get available indices: {e}")
-            return set()
-    
-    def _copy_files_to_splits(self, split_indices: Dict[str, Set[str]]) -> Dict[str, SplitResult]:
-        """Copy files to their respective split directories with progress tracking."""
-        results = {}
-        
-        for i, (split_name, indices) in enumerate(split_indices.items(), 1):
-            stage_name = f"Processing {split_name} split"
-            logger.info(f"{stage_name} ({len(indices)} files)")
+        for split_name, indices in splits.items():
+            filename = filenames.get(split_name, f"{split_name}.txt") if filenames else f"{split_name}.txt"
+            filepath = output_path / filename
             
             try:
-                # Save state for resume capability
-                if self.state_manager:
-                    self.state_manager.save_state(
-                        f"processing_{split_name}", 
-                        {"split": split_name, "file_count": len(indices)}
-                    )
-                
-                split_dir = self.processed_dir / split_name
-                result = self._copy_split_files(split_name, indices, split_dir)
-                results[split_name] = result
-                
-                # Update progress
-                progress = 30 + (i / len(split_indices)) * 60
-                self.progress_tracker.update_progress(int(progress), f"Completed {split_name}")
-                
+                df_index = pd.DataFrame(sorted(indices), columns=["Index"])
+                self.write_df_to_file(df_index, filepath)
+                saved_files[split_name] = str(filepath)
+                logger.info(f"Saved {len(indices)} {split_name} indices to {filepath}")
             except Exception as e:
-                error_msg = f"Failed to process {split_name} split: {e}"
-                logger.error(error_msg)
-                results[split_name] = SplitResult(
-                    split_name, set(), ProcessingStats(), False, error_msg
-                )
+                logger.error(f"Failed to save {split_name} indices to {filepath}: {e}")
+                raise
         
-        return results
+        return saved_files
     
-    def _copy_split_files(self, split_name: str, indices: Set[str], split_dir: Path) -> SplitResult:
-        """Copy all file types for a single split."""
-        total_stats = ProcessingStats()
-        final_valid_indices = indices.copy()
+    def split_and_save(self, indices: List[str], output_dir: str = "split", 
+                      filenames: Optional[Dict[str, str]] = None) -> Dict[str, any]:
+        """
+        Complete pipeline: split indices and save to files.
         
-        try:
-            # Step 1: Copy label files first using the specialized manager
-            self.label_manager.process_split_labels(
-                split_name, indices, self.cleaned_dir, split_dir, "Copied"
-            )
+        Args:
+            indices: List of indices to split
+            output_dir: Directory to save files (default: "split")
+            filenames: Custom filenames for splits
             
-            # Step 2: Copy other file types using existing FileCopier
-            file_types = [FileType.IMAGE, FileType.PROBE, FileType.DEPTH]
-            split_file_copier = FileCopier(self.cleaned_dir, split_dir, self.cameras, self.max_workers)
-            
-            for file_type in file_types:
-                logger.info(f"Copying {file_type.name.lower()} files for {split_name}")
-                
-                try:
-                    successfully_copied = split_file_copier.copy_files_by_type(indices, file_type)
-                    
-                    # Keep intersection to ensure all file types are present
-                    final_valid_indices &= successfully_copied
-                    
-                    if not final_valid_indices:
-                        logger.warning(
-                            f"No files remain after copying {file_type.name.lower()} files for {split_name}"
-                        )
-                        break
-                        
-                except Exception as e:
-                    logger.error(f"Failed to copy {file_type.name.lower()} files for {split_name}: {e}")
-                    raise
-            
-            # Step 3: Update label files to only include final valid indices
-            if final_valid_indices != indices:
-                logger.info(f"Updating label files for {split_name} to match available files")
-                self.label_manager.process_split_labels(
-                    split_name, final_valid_indices, split_dir, split_dir, "Updated"
-                )
-            
-            return SplitResult(split_name, final_valid_indices, total_stats)
-            
-        except Exception as e:
-            logger.error(f"Error copying files for {split_name}: {e}")
-            return SplitResult(split_name, set(), total_stats, False, str(e))
+        Returns:
+            Dictionary containing split indices and file paths
+        """
+        logger.info("Starting data splitting process...")
+        # Split the indices
+        train_indices, val_indices, test_indices = self.split_indices(indices)
+        
+        # Save to files
+        saved_files = self.save_split_files(train_indices, val_indices, test_indices)
+        
+        # Prepare summary
+        result = {
+            'splits': {
+                'train': train_indices,
+                'val': val_indices,
+                'test': test_indices
+            },
+            'files': saved_files,
+            'summary': {
+                'total': len(indices),
+                'train_count': len(train_indices),
+                'val_count': len(val_indices),
+                'test_count': len(test_indices)
+            }
+        }
+        
+        self.print_summary(result['summary'])
+        return result
     
-    def _log_split_summary(self, results: Dict[str, SplitResult]) -> None:
-        """Log comprehensive summary of splitting results."""
-        logger.info("=" * 60)
-        logger.info("DATA SPLITTING SUMMARY")
-        logger.info("=" * 60)
-        
-        successful_results = {k: v for k, v in results.items() if v.success}
-        failed_results = {k: v for k, v in results.items() if not v.success}
-        
-        total_files = sum(result.get_file_count() for result in successful_results.values())
-        
-        # Log successful splits
-        if successful_results:
-            logger.info("SUCCESSFUL SPLITS:")
-            for split_name in self.data_split_config.split_names:
-                if split_name in successful_results:
-                    result = successful_results[split_name]
-                    percentage = result.get_percentage(total_files)
-                    logger.info(f"  {split_name.upper()}: {result.get_file_count()} files ({percentage:.1f}%)")
-        
-        # Log failed splits
-        if failed_results:
-            logger.warning("FAILED SPLITS:")
-            for split_name, result in failed_results.items():
-                logger.warning(f"  {split_name.upper()}: {result.error_message}")
-        
-        logger.info(f"TOTAL SUCCESSFUL: {total_files} files processed")
-        logger.info("=" * 60)
-    
-    def validate_splits(self, results: Dict[str, SplitResult]) -> bool:
-        """Validate that splits were created correctly."""
-        try:
-            for split_name, result in results.items():
-                if not result.success:
-                    logger.error(f"Split {split_name} failed: {result.error_message}")
-                    return False
-                
-                split_dir = self.processed_dir / split_name
-                if not split_dir.exists():
-                    logger.error(f"Split directory not found: {split_dir}")
-                    return False
-                
-                # Check that all cameras and data types exist
-                for camera_proc in self.cameras.values():
-                    camera_dir = split_dir / camera_proc
-                    if not camera_dir.exists():
-                        logger.error(f"Camera directory not found: {camera_dir}")
-                        return False
-                    
-                    expected_dirs = list(self.data_types.values()) + [LABEL_PROC_DIR]
-                    for data_type_dir in expected_dirs:
-                        type_dir = camera_dir / data_type_dir
-                        if not type_dir.exists():
-                            logger.error(f"Data type directory not found: {type_dir}")
-                            return False
-            
-            logger.info("Split validation completed successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Split validation failed: {e}")
-            return False
+    def print_summary(self, summary: Dict[str, int]) -> None:
+        """Print a formatted summary of the split."""
+        print("\nDataset split complete:")
+        print(f"Total indices: {summary['total']}")
+        print(f"Train: {summary['train_count']} ({summary['train_count']/summary['total']:.1%})")
+        print(f"Validation: {summary['val_count']} ({summary['val_count']/summary['total']:.1%})")
+        print(f"Test: {summary['test_count']} ({summary['test_count']/summary['total']:.1%})")
