@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SplitConfig:
-    """Configuration class for data organization parameters."""
+    """Configuration class for data organisation parameters."""
     train_ratio: float = 0.7
     val_ratio: float = 0.15
     test_ratio: float = 0.15
@@ -35,7 +35,7 @@ class DatasetSplitter(DataFrameFileProcessor):
     
     def __init__(self, config: Optional[SplitConfig] = None):
         """
-        Initialize the DatasetSplitter.
+        Initialise the DatasetSplitter.
         
         Args:
             config: Configuration object with split ratios and validation
@@ -53,7 +53,7 @@ class DatasetSplitter(DataFrameFileProcessor):
         self.temp_ratio = self.val_ratio + self.test_ratio  # Combined val+test ratio
         self.val_test_split_ratio = self.test_ratio / self.temp_ratio  # Test ratio within val+test
         
-        logger.info(f"Initialized DatasetSplitter with ratios - Train: {self.train_ratio}, Val: {self.val_ratio}, Test: {self.test_ratio}")
+        logger.info(f"Initialised DatasetSplitter with ratios - Train: {self.train_ratio}, Val: {self.val_ratio}, Test: {self.test_ratio}")
     
     def split_indices(self, indices: List[str]) -> Tuple[List[str], List[str], List[str]]:
         """

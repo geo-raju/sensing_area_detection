@@ -16,7 +16,7 @@ class DataValidator(FileLoader, DataFrameFileProcessor):
     
     def __init__(self, label_paths: Dict[str, str], probe_dirs: Dict[str, str]):
         """
-        Initialize the DataValidator.
+        Initialise the DataValidator.
         
         Args:
             label_paths: Dictionary mapping camera names to label file paths

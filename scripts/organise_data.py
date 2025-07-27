@@ -5,7 +5,7 @@ Simple pipeline runner with step-by-step execution and configuration.
 Usage examples:
     python scripts/organise_data.py --validate-only
     python scripts/organise_data.py --split-only
-    python scripts/organise_data.py --organize-only
+    python scripts/organise_data.py --organise-only
     python scripts/organise_data.py --all
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from src.data.validator import DataValidator
 from src.data.splitter import DatasetSplitter, SplitConfig
-from src.data.copier import DataOrganizer, DataConfig
+from src.data.copier import Dataorganiser, DataConfig
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -121,8 +121,8 @@ def run_splitting(paths, indices=None):
         return None
 
 
-def run_organization(paths):
-    """Run only the organization step."""
+def run_Organisation(paths):
+    """Run only the Organisation step."""
     
     # Check if split files exist
     split_dir = paths['base_dir'] / "data" / "indices"
@@ -130,7 +130,7 @@ def run_organization(paths):
         logger.error(f"Split directory not found at {split_dir}. Run splitting first.")
         return None
     
-    # Setup organizer configuration
+    # Setup organiser configuration
     data_config = DataConfig(
         base_dir=str(paths['base_dir']),
         raw_dir=str(paths['raw_data_dir']),
@@ -138,15 +138,15 @@ def run_organization(paths):
         cameras=paths['cameras']
     )
     
-    # Run organization
-    organizer = DataOrganizer(data_config)
-    results = organizer.organize_data()
+    # Run Organisation
+    organiser = Dataorganiser(data_config)
+    results = organiser.organise_data()
     
     if results:
-        logger.info("Organization successful")
+        logger.info("Organisation successful")
         return results
     else:
-        logger.error("Organization failed")
+        logger.error("Organisation failed")
         return None
 
 
@@ -168,8 +168,8 @@ def run_all_steps(paths):
     
     print("\n" + "="*50)
     
-    # Step 3: Organization
-    org_results = run_organization(paths)
+    # Step 3: Organisation
+    org_results = run_Organisation(paths)
     if not org_results:
         return False
     
@@ -182,7 +182,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run data processing pipeline")
     parser.add_argument("--validate-only", action="store_true", help="Run only validation step")
     parser.add_argument("--split-only", action="store_true", help="Run only splitting step")
-    parser.add_argument("--organize-only", action="store_true", help="Run only organization step")
+    parser.add_argument("--organise-only", action="store_true", help="Run only Organisation step")
     parser.add_argument("--all", action="store_true", help="Run all steps")
     parser.add_argument("--base-dir", type=str, help="Base directory path")
     
@@ -209,8 +209,8 @@ def main():
             run_validation(paths)
         elif args.split_only:
             run_splitting(paths)
-        elif args.organize_only:
-            run_organization(paths)
+        elif args.organise_only:
+            run_Organisation(paths)
         elif args.all:
             run_all_steps(paths)
         else:

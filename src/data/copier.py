@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DataConfig:
-    """Configuration class for data organization parameters."""
+    """Configuration class for data organisation parameters."""
     base_dir: str = str(Path(__file__).parent.parent.parent)
     raw_dir: str = base_dir + "data/raw"
     processed_dir: str = base_dir + "data/processed"
@@ -39,12 +39,12 @@ class DataConfig:
             }
 
 
-class DataOrganizer(DirectoryManager, FileLoader, DataFrameFileProcessor):
-    """Organizes raw camera data into processed train/val/test splits."""
+class Dataorganiser(DirectoryManager, FileLoader, DataFrameFileProcessor):
+    """organises raw camera data into processed train/val/test splits."""
     
     def __init__(self, config: Optional[DataConfig] = None):
         """
-        Initialize the DataOrganizer.
+        Initialise the Dataorganiser.
         
         Args:
             config: Configuration object with directory paths and settings
@@ -226,9 +226,9 @@ class DataOrganizer(DirectoryManager, FileLoader, DataFrameFileProcessor):
         
         return split_stats
     
-    def organize_data(self, split_dir: Optional[str] = None) -> Dict[str, Dict[str, int]]:
+    def organise_data(self, split_dir: Optional[str] = None) -> Dict[str, Dict[str, int]]:
         """
-        Main method to organize all data splits.
+        Main method to organise all data splits.
         
         Args:
             split_dir: Directory containing split files (train.txt, val.txt, test.txt)
@@ -236,7 +236,7 @@ class DataOrganizer(DirectoryManager, FileLoader, DataFrameFileProcessor):
         Returns:
             Dictionary with statistics for each split
         """
-        logger.info("Starting data organization process...")
+        logger.info("Starting data organisation process...")
         
         # Process each split
         all_stats = {}
@@ -268,14 +268,14 @@ class DataOrganizer(DirectoryManager, FileLoader, DataFrameFileProcessor):
                     self.stats[key] += split_stats.get(key.split('_')[0], 0)
         
         self.print_summary(all_stats)
-        logger.info("Data organization complete!")
+        logger.info("Data organisation complete!")
         
         return all_stats
     
     def print_summary(self, all_stats: Dict[str, Dict[str, int]]) -> None:
-        """Print a summary of the organization process."""
+        """Print a summary of the organisation process."""
         print("\n" + "="*50)
-        print("DATA ORGANIZATION SUMMARY")
+        print("DATA organisation SUMMARY")
         print("="*50)
         
         total_copied = sum(stats.get('copied', 0) for stats in all_stats.values())
@@ -304,5 +304,5 @@ class DataOrganizer(DirectoryManager, FileLoader, DataFrameFileProcessor):
 if __name__ == "__main__":
     # Example usage
     config = DataConfig()
-    organizer = DataOrganizer(config)
-    results = organizer.organize_data()
+    organiser = Dataorganiser(config)
+    results = organiser.organise_data()
