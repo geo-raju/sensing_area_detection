@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SplitConfig:
     """Configuration class for data organisation parameters."""
-    train_ratio: float = 0.7
-    val_ratio: float = 0.15
-    test_ratio: float = 0.15
+    train_ratio: float = 0.8
+    val_ratio: float = 0.1
+    test_ratio: float = 0.1
     random_state: int = 42
     base_dir: Path = Path(__file__).parent.parent.parent
     
@@ -148,7 +148,7 @@ class DatasetSplitter(DataFrameFileProcessor):
         
         return saved_files
     
-    def split_and_save(self, indices: List[str], output_dir: str = "split", 
+    def split_and_save(self, indices: List[str], output_dir: Optional[str] = None, 
                       filenames: Optional[Dict[str, str]] = None) -> Dict[str, any]:
         """
         Complete pipeline: split indices and save to files.
@@ -166,7 +166,7 @@ class DatasetSplitter(DataFrameFileProcessor):
         train_indices, val_indices, test_indices = self.split_indices(indices)
         
         # Save to files
-        saved_files = self.save_split_files(train_indices, val_indices, test_indices)
+        saved_files = self.save_split_files(train_indices, val_indices, test_indices, output_dir, filenames)
         
         # Prepare summary
         result = {
