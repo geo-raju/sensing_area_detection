@@ -35,7 +35,8 @@ class DataConfig:
             self.categories = {
                 "images": ("laser_off", ".jpg"),
                 "depth_labels": ("depthGT", ".npy"),
-                "probe_axis": ("line_annotation_sample", ".txt")
+                "probe_axis": ("line_annotation_sample", ".txt"),
+                "illuminated": ("rgb", ".jpg")
             }
 
 
