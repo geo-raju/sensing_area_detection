@@ -5,7 +5,7 @@ import pandas as pd
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.data.dataframe_file_processor import DataFrameFileProcessor
+from src.data.file_processor import FileProcessor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -30,7 +30,7 @@ class SplitConfig:
             raise ValueError("All ratios must be positive")
 
 
-class DatasetSplitter(DataFrameFileProcessor):
+class DatasetSplitter(FileProcessor):
     """Handles splitting dataset indices into train/validation/test sets."""
     
     def __init__(self, config: Optional[SplitConfig] = None):

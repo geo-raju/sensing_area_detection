@@ -4,14 +4,14 @@ from typing import Dict, List, Set, Optional
 import logging
 
 from src.data.file_loader import FileLoader
-from src.data.dataframe_file_processor import DataFrameFileProcessor
+from src.data.file_processor import FileProcessor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 
-class DataValidator(FileLoader, DataFrameFileProcessor):
+class DataValidator(FileLoader, FileProcessor):
     """Validates camera data files and probe axis files for consistency."""
     
     def __init__(self, label_paths: Dict[str, str], probe_dirs: Dict[str, str]):

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from src.data.directory_manager import DirectoryManager
 from src.data.file_loader import FileLoader
-from src.data.dataframe_file_processor import DataFrameFileProcessor
+from src.data.file_processor import FileProcessor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -33,14 +33,13 @@ class DataConfig:
         
         if self.categories is None:
             self.categories = {
-                "images": ("laser_off", ".jpg"),
                 "depth_labels": ("depthGT", ".npy"),
                 "probe_axis": ("line_annotation_sample", ".txt"),
-                "illuminated": ("rgb", ".jpg")
+                "images": ("rgb", ".jpg")
             }
 
 
-class Dataorganiser(DirectoryManager, FileLoader, DataFrameFileProcessor):
+class Dataorganiser(DirectoryManager, FileLoader, FileProcessor):
     """organises raw camera data into processed train/val/test splits."""
     
     def __init__(self, config: Optional[DataConfig] = None):
@@ -300,10 +299,3 @@ class Dataorganiser(DirectoryManager, FileLoader, DataFrameFileProcessor):
             print(f"\n  Completed with {total_missing} missing files")
         else:
             print(f"\n Completed with {total_errors} errors and {total_missing} missing files")
-
-
-if __name__ == "__main__":
-    # Example usage
-    config = DataConfig()
-    organiser = Dataorganiser(config)
-    results = organiser.organise_data()
