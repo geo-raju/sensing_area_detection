@@ -14,6 +14,8 @@ class SampleData:
     right_label: torch.Tensor
     left_axis: torch.Tensor
     right_axis: torch.Tensor
+    left_depth: torch.Tensor
+    right_depth: torch.Tensor
     filename: str
 
     def __getitem__(self, key):

@@ -7,11 +7,8 @@ from torch.utils.data import Dataset
 import logging
 
 from config.data_config import (
-    PROC_DIR_PATH, 
-    CAMERA_CONFIG,
-    LABEL_PROC_DIR, 
-    IMG_PROC_DIR, 
-    PROBE_PROC_DIR
+    PROC_DIR_PATH, CAMERA_CONFIG, SPLIT_NAMES,
+    LABEL_PROC_DIR, IMG_PROC_DIR, PROBE_PROC_DIR, DEPTH_PROC_DIR
 )
 from src.dataset.core.data_structures import DatasetError
 from src.dataset.core.data_structures import SampleData
@@ -26,16 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class SensingAreaDataset(Dataset):
-    """
-    Optimized dataset for stereo vision sensing area detection.
-
-    Features:
-    - Modular design with separate components for different responsibilities
-    - Robust error handling and validation
-    - Efficient caching of labels
-    - Flexible transform support
-    - Comprehensive validation methods
-    """
+    """Optimized dataset for stereo vision sensing area detection."""
 
     def __init__(
         self,
@@ -46,18 +34,9 @@ class SensingAreaDataset(Dataset):
         lazy_load: bool = True,
         seed: Optional[int] = None
     ) -> None:
-        """
-        Initialize dataset.
-
-        Args:
-            root: Root directory path
-            subset: Dataset subset ('train', 'val', 'test')
-            transform: Albumentations transform (e.g., from TransformPipeline)
-            validate_structure: Whether to validate directory structure
-            lazy_load: Whether to load labels lazily
-        """
-        if subset not in {'train', 'val', 'test'}:
-            raise ValueError(f"Invalid subset '{subset}'. Must be: train, val, test")
+        """Initialize dataset."""
+        if subset not in SPLIT_NAMES:
+            raise ValueError(f"Invalid subset '{subset}'. Must be: {SPLIT_NAMES}")
 
         self.root = Path(root)
         self.subset = subset
@@ -138,6 +117,14 @@ class SensingAreaDataset(Dataset):
         left_center = self.label_loader.get_label(filename, cameras[0])
         right_center = self.label_loader.get_label(filename, cameras[1])
 
+        # --- ADD THESE DEBUG LOGS ---
+        if left_center is None or right_center is None:
+            logger.error(f"Missing center point for {filename}: Left={left_center}, Right={right_center}")
+        elif not (isinstance(left_center, tuple) and len(left_center) == 2 and
+                isinstance(right_center, tuple) and len(right_center) == 2):
+            logger.error(f"Invalid center point format for {filename}: Left={left_center}, Right={right_center}")
+        # --- END DEBUG LOGS ---
+
         # Load axis points
         filename_no_ext = os.path.splitext(filename)[0]
         left_axis_path = self.file_manager.get_directory(cameras[0], PROBE_PROC_DIR) / f"{filename_no_ext}.txt"
@@ -213,3 +200,119 @@ class SensingAreaDataset(Dataset):
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get a summary of validation results."""
         return self.validator.get_validation_summary()
+    
+if __name__ == "__main__":
+    def create_sensing_area_dataset(
+        root: str = './data/processed',  # Default processed data directory
+        subset: str = 'train',
+        transform: Optional[Any] = None,
+        validate_structure: bool = True,
+        lazy_load: bool = True,
+        seed: Optional[int] = None
+    ) -> SensingAreaDataset:
+        """
+        Factory function to create an instance of SensingAreaDataset.
+
+        Args:
+            root: The root directory path where the processed dataset is located.
+                Defaults to './data/processed'.
+            subset: The dataset subset to load ('train', 'val', or 'test').
+                    Defaults to 'train'.
+            transform: Optional Albumentations transform to apply to the data.
+                    Defaults to None.
+            validate_structure: If True, validates the dataset directory structure upon initialization.
+                                Defaults to True.
+            lazy_load: If True, labels are loaded lazily when accessed. If False, labels are pre-loaded.
+                    Defaults to True.
+            seed: Optional integer for setting random seeds for reproducibility.
+                Defaults to None.
+
+        Returns:
+            An initialized SensingAreaDataset object.
+
+        Raises:
+            ValueError: If an invalid subset is provided.
+            FileNotFoundError: If validate_structure is True and the directory structure is invalid.
+            DatasetError: If there's an issue loading image filenames.
+        """
+        if subset not in {'train', 'val', 'test'}:
+            raise ValueError(f"Invalid subset '{subset}'. Must be one of 'train', 'val', or 'test'.")
+
+        try:
+            dataset = SensingAreaDataset(
+                root=Path(root).resolve(),  # Ensure root path is absolute
+                subset=subset,
+                transform=transform,
+                validate_structure=validate_structure,
+                lazy_load=lazy_load,
+                seed=seed
+            )
+            return dataset
+        except Exception as e:
+            print(f"Error creating SensingAreaDataset for subset '{subset}': {e}")
+            raise # Re-raise the exception after logging
+    
+    # 1. Create a training dataset with default settings
+    print("Creating training dataset...")
+    try:
+        train_dataset = create_sensing_area_dataset(subset='train')
+        print(f"Training dataset created with {len(train_dataset)} samples.")
+        print(train_dataset.get_subset_stats())
+        # Example of accessing a sample (will only work if actual data exists)
+        # sample = train_dataset[0]
+        # print(f"Sample 0 filename: {sample.filename}")
+    except (ValueError, FileNotFoundError, Exception) as e:
+        print(f"Failed to create training dataset: {e}")
+
+    print("\n" + "="*50 + "\n")
+
+    # 2. Create a validation dataset with a specific root and no structure validation
+    print("Creating validation dataset with custom root and no structure validation...")
+    try:
+        # Assuming 'data/processed' exists relative to where you run this script
+        val_dataset = create_sensing_area_dataset(
+            root='./data/processed',
+            subset='val',
+            validate_structure=False, # Skip initial structure validation for testing
+            lazy_load=True,
+            seed=42
+        )
+        print(f"Validation dataset created with {len(val_dataset)} samples.")
+        print(val_dataset.get_subset_stats())
+    except (ValueError, FileNotFoundError, Exception) as e:
+        print(f"Failed to create validation dataset: {e}")
+
+    print("\n" + "="*50 + "\n")
+
+    # 3. Demonstrate error handling for an invalid subset
+    print("Attempting to create dataset with invalid subset...")
+    try:
+        invalid_dataset = create_sensing_area_dataset(subset='development')
+    except ValueError as e:
+        print(f"Caught expected error: {e}")
+    except Exception as e:
+        print(f"Caught unexpected error: {e}")
+
+    print("\n" + "="*50 + "\n")
+
+    # 4. Create a dataset with a dummy transform (you'd replace this with a real Albumentations transform)
+    # This requires `albumentations` to be installed.
+    # pip install albumentations
+    try:
+        import albumentations as A
+        dummy_transform = A.Compose([
+            A.Resize(256, 256),
+            A.Normalize()
+        ])
+        print("Creating test dataset with a dummy transform...")
+        test_dataset = create_sensing_area_dataset(
+            subset='test',
+            transform=dummy_transform,
+            lazy_load=False # Pre-load labels
+        )
+        print(f"Test dataset created with {len(test_dataset)} samples.")
+        print(test_dataset.get_subset_stats())
+    except ImportError:
+        print("Albumentations not installed. Skipping transform example.")
+    except (ValueError, FileNotFoundError, Exception) as e:
+        print(f"Failed to create test dataset with transform: {e}")

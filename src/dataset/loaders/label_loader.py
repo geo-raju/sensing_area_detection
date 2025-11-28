@@ -2,6 +2,7 @@ from pathlib import Path
 import logging
 from functools import cached_property
 from typing import Tuple, Dict
+import numpy as np
 
 from src.dataset.core.data_structures import DatasetError
 from src.dataset.loaders.file_manager import FileManager
@@ -44,6 +45,10 @@ class LabelLoader:
 
         left_count = len(points.get('left', {}))
         right_count = len(points.get('right', {}))
+
+        if left_count != right_count:
+            logger.warning(f"Mismatch in label counts: left={left_count}, right={right_count}")
+
         logger.info(f"Loaded {left_count} left, {right_count} right center points")
 
         return points
@@ -65,6 +70,11 @@ class LabelLoader:
                         try:
                             filename = parts[0]
                             x, y = float(parts[1]), float(parts[2])
+
+                            if np.isnan(x) or np.isnan(y):
+                                logger.warning(f"Label contains NaN for {filename} in {file_path}:{line_num}. Skipping line: {line}")
+                                continue
+
                             points[filename] = (x, y)
                             break
                         except ValueError:
